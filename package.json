@@ -1,0 +1,39 @@
+{
+  "name": "ai-news-today",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -H 127.0.0.1",
+    "build": "next build",
+    "start": "next start -H 127.0.0.1",
+    "lint": "eslint",
+    "typecheck": "next typegen && tsc --noEmit",
+    "test": "vitest run",
+    "check:docs": "bash scripts/harness/check-docs.sh",
+    "check:arch": "bash scripts/harness/check-arch.sh",
+    "check:secrets": "bash scripts/harness/check-secrets.sh",
+    "check:secrets:push": "bash scripts/harness/check-secrets.sh --commits",
+    "check": "npm run check:secrets && npm run lint && npm run typecheck && npm run test && npm run check:docs && npm run check:arch"
+  },
+  "engines": {
+    "node": ">=26"
+  },
+  "dependencies": {
+    "next": "16.3.8",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@secretlint/secretlint-rule-pattern": "^13.0.7",
+    "@secretlint/secretlint-rule-preset-recommend": "^13.0.7",
+    "@types/node": "^26.6.4",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "dependency-cruiser": "^18.5.0",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.8",
+    "secretlint": "^13.0.7",
+    "typescript": "^5",
+    "vitest": "^5.0.3"
+  }
+}

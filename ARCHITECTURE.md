@@ -1,0 +1,69 @@
+# ARCHITECTURE
+
+このプロジェクトの現在の設計の正本。層、依存の向き、各層の責務、不変条件を書く。
+過去の判断の理由は `docs/adr/` に置く。P1（土台）の時点の仮置きで、機能を作りながら直す。
+
+## 層と責務
+
+コードはすべて `src/` の下に置き、直下のディレクトリを層とする。
+
+| 層 | パス | 責務 |
+|---|---|---|
+| 画面 | `src/app/` | Next.js の画面とルート。組み立てだけを行い、取得や選別の処理を書かない |
+| 表示の部品 | `src/ui/` | 受け取った値を表示する部品。取得も選別もしない |
+| 組み立て | `src/composition/` | 実行時の依存（本物の時計、情報源）を選んで束ねる。本物の実装を選ぶのはこの層だけ |
+| 処理の流れ | `src/services/` | 取得と整形・選別を束ねる。依存は引数で受け取る |
+| 取得 | `src/sources/` | 情報源（Hacker News、はてなブックマーク、X の oEmbed）から取得し、`src/domain/` の型にそろえる |
+| 整形・選別 | `src/curation/` | 純粋な関数だけ。取得も現在時刻の取得もしない（時刻は引数で受け取る） |
+| 外部と時刻の入口 | `src/ports/` | 外部への HTTP（`src/ports/http.ts`）と現在時刻（`src/ports/clock.ts`）の型、本物の実装、試験用の決まった実装 |
+| 型 | `src/domain/` | 記事などの型。他の層を import しない |
+
+## 依存の向き
+
+各層が import してよい層（自分自身を含む）。この表にない向きの import は、`npm run check:arch`
+（dependency-cruiser。規則は `.dependency-cruiser.cjs`）が失敗にし、CI も落ちる。
+
+| 層 | import してよい層 |
+|---|---|
+| `src/app/` | app、composition、services、ui、domain |
+| `src/ui/` | ui、domain |
+| `src/composition/` | composition、services、sources、ports、domain |
+| `src/services/` | services、sources、curation、ports、domain |
+| `src/sources/` | sources、ports、domain |
+| `src/curation/` | curation、domain |
+| `src/ports/` | ports、domain |
+| `src/domain/` | domain |
+
+加えて、循環した依存と、`src/` の直下の上の表に無いディレクトリ・ファイルも失敗にする（後者は何も import しない
+ファイルでも、`scripts/harness/check-arch.sh` が一覧を照合して検出する）。型だけの import も依存に数える。
+
+## 不変条件
+
+1. 外部への通信と現在時刻は、`src/ports/` からだけ得る。ほかの層は `HttpClient` と `Clock` を引数で受け取る。
+   試験のときに、決まったデータ（`fixtureHttpClient`、`staticSource`）と決まった時刻（`fixedClock`）へ差し替えるため
+   である。ESLint が、`src/ports/` の外での通信のための大域の名前（`fetch`、`WebSocket`、`XMLHttpRequest`、
+   `EventSource`。`globalThis.`、`window.`、`self.` を付けた形を含む）と、`Date.now()`、`Date()`、引数の無い `new Date()`、
+   `Temporal.Now` を拒否する（`eslint.config.mjs`。対象は `src/` の下の ts、tsx、js、jsx、mjs、cjs、mts、cts）。
+   `performance.now()` と `new Date(undefined)` は現在時刻を返さないので対象にしない。
+2. 通信のためのモジュール（`http`、`https`、`http2`、`net`、`tls`、`dgram` と、それぞれに `node:` を付けた名前、`undici`）は、
+   `src/ports/` の外で import しない。層の向きの規則（上の表）とは別の不変条件で、`fetch` を禁じても、これらを使えば
+   外部へ通信できてしまうためである。ESLint が、`import`、`require()`、`import()` のいずれも拒否する（`eslint.config.mjs`）。
+   ESLint は書いた名前の形だけを見るので、1 と 2 のどちらでも、別名を経由した書き方（`const g = globalThis; g.fetch(...)`、
+   `const T = Temporal; T.Now`、モジュールの名前を変数で組み立てた `import()` など）は止められない。この形はレビューで
+   人が確かめる。
+3. 秘匿値は、ブラウザへ渡るコードに置かない。`NEXT_PUBLIC_` で始まる環境変数に鍵を置かない（`AGENTS.md`）。
+4. 取得した記事の本文と翻訳は、リポジトリに置かない（`AGENTS.md`）。保存する場所を決めたら、同じ変更で
+   `.gitignore` に入れる。
+
+## 将来の作りの注意（記事の取得を実装するとき）
+
+まだ実装していない。`src/sources/` に情報源を足すときに守る。
+
+- 外部から来る記事の URL は、`http:` と `https:` だけを通し、それ以外（`javascript:`、`data:` など）は記事ごと落とす。
+  URL は画面のリンク（`src/ui/NewsList.tsx` の `href`）にそのまま入るためである。
+- 記事の id には情報源の名前を含める（例: `hn:12345`、`hatena:...`）。情報源が違うと id が重なりうるうえ、
+  id を画面の要素の key に使っているためである。
+
+## 中核的な原則
+
+- 層の向きを変えるときは、この文書、`.dependency-cruiser.cjs`、ADR を同じ変更で直す。

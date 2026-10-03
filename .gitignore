@@ -1,0 +1,47 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# Claude Code の手元だけの設定（許可の設定などを含むため、共有しない）。
+# 広い除外（*.log 全般や IDE の設定）は足さない。除外したファイルは秘匿値の検査の対象から外れるため。
+.claude/settings.local.json
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files: 秘匿値をコミットしないため、.env で始まるファイルはすべて除外する（AGENTS.md）。
+# 例外は、変数の名前だけを書く .env.example だけ（値は書かない）。
+.env*
+!.env.example
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts

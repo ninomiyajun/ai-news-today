@@ -1,0 +1,13 @@
+# 依存の更新を追う（npm の依存と、GitHub Actions のアクション）。
+# アクションはコミットの SHA で固定しているので、Dependabot が SHA と版の名前のコメントを一緒に更新する。
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

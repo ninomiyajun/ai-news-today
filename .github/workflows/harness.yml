@@ -1,0 +1,67 @@
+# ハーネスの検査。手元の `npm run check` と同じ検査を、同じ順で実行する。加えて、変更の範囲の各コミットの中身の
+# 秘匿値を検査する。マージの必須条件にする設定は、GitHub のリポジトリの設定（ブランチの保護）で行う。
+# アクションはコミットの SHA で固定し、版の名前をコメントに残す（更新は .github/dependabot.yml）。
+# 秘匿値の検査を、リポジトリ由来のスクリプトより先に動かす理由は docs/adr/0002-secret-scan-scope.md。
+name: harness
+
+# push は、すべてのブランチとタグで動かす（公開リポジトリでは、push した時点で中身が公開されるため）。
+on:
+  pull_request:
+  push:
+    branches: ["**"]
+    tags: ["**"]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    # ブランチやタグを消した push では、検査する中身が無い
+    if: github.event_name != 'push' || !github.event.deleted
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # 変更の範囲の各コミットを検査するため、履歴をすべて取得する
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      # 依存のインストール用のスクリプト（preinstall など）を動かさずに入れる。秘匿値の検査より前に、
+      # 変更されたリポジトリ由来のスクリプトが作業ツリーを書き換えられないようにするため。
+      # インストール用のスクリプトが要る依存が出たら、秘匿値の検査の後に npm rebuild の段を足す。
+      - name: install（インストール用のスクリプトを動かさない）
+        run: npm ci --ignore-scripts
+      # 秘匿値の検査は npm run を経由せず node で直接呼ぶ。変更で package.json に pre で始まるスクリプトを足して、
+      # 検査の前に動かすことを防ぐため。
+      - name: check-secrets（作業ツリーの全ファイル）
+        run: node scripts/harness/check-secrets.mjs
+      - name: check-secrets（変更の範囲の各コミットの中身）
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            # HEAD は、pull request を base に合わせた試しのマージのコミット
+            node scripts/harness/check-secrets.mjs --commits "$PR_BASE..HEAD"
+          elif [ -n "$PUSH_BEFORE" ] && git cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then
+            node scripts/harness/check-secrets.mjs --commits "$PUSH_BEFORE..HEAD"
+          else
+            # 新しいブランチやタグの最初の push（前の先頭が 0 になる）や、前のコミットが履歴に無い場合は、
+            # すべてのコミットを調べる
+            node scripts/harness/check-secrets.mjs --commits HEAD
+          fi
+      - name: lint
+        run: npm run lint
+      - name: typecheck
+        run: npm run typecheck
+      - name: test
+        run: npm run test
+      - name: check-docs
+        run: npm run check:docs
+      - name: check-arch
+        run: npm run check:arch
