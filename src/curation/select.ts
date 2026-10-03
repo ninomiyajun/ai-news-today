@@ -14,3 +14,6 @@ export function selectRecent(items: readonly NewsItem[], now: Date, maxAgeHours:
     })
     .sort((a, b) => b.score - a.score);
 }
+
+// CI が違反で失敗することを確かめるための、わざと入れた違反（マージしない）。
+export const deliberateViolation = Date.now();
