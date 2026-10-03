@@ -7,6 +7,14 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # react と react-dom は同じ版にそろえないと依存の解決に失敗するので、型の定義とあわせて 1 つの PR にまとめる。
+    groups:
+      react:
+        patterns:
+          - react
+          - react-dom
+          - "@types/react"
+          - "@types/react-dom"
   - package-ecosystem: github-actions
     directory: /
     schedule:
