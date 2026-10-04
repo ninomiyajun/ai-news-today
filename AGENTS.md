@@ -3,8 +3,9 @@
 ハーネスの版: 1
 
 この行は、このプロジェクトにハーネス（規約と検査の一式）を導入済みであることを示す印である。
-`scripts/harness/check-docs.sh` が、この版で必須のファイルが揃っているかを確かめる。印の書式は仮置きで、
-利用者単位の規約（`project-docs.md`。未作成）で決まったら合わせる。
+`scripts/harness/check-docs.sh` が、この版で必須のファイルが揃っているかを確かめる。印の書式（「ハーネスの版: 」に
+整数を続けた 1 行）は、ハーネスの規約が定めたものに合わせている。版の数は、必須のファイルが増えるときに上げ、
+同じ変更で `check-docs.sh` の版ごとの一覧を足す。
 
 ## このアプリ
 
@@ -49,7 +50,7 @@ ai-news-today（GitHub）に置く。現在は土台だけで、記事の取得�
 | lint | `npm run lint` |
 | 型 | `npm run typecheck` |
 | 試験 | `npm run test` |
-| 文書（必須のファイル、CLAUDE.md、地図、リンク、目録、行数） | `npm run check:docs` |
+| 文書（必須のファイル、CLAUDE.md、地図、リンク、目録、行数、計画の必須の節） | `npm run check:docs` |
 | 層の依存の向きと、`src/` の直下の名前 | `npm run check:arch` |
 | 秘匿値（作業ツリーの、コミットする全ファイル） | `npm run check:secrets` |
 | 秘匿値（push する範囲の各コミットの中身） | `npm run check:secrets:push` |
