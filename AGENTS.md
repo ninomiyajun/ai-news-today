@@ -66,7 +66,7 @@ ai-news-today（GitHub）に置く。現在は土台だけで、記事の取得�
 | 種類 | パス | 読む条件 |
 |---|---|---|
 | 設計の正本（層、依存の向き、不変条件） | `ARCHITECTURE.md` | コードを変える前 |
-| 設計判断の履歴 | `docs/adr/README.md` | 設計を変える前、過去の判断の理由を知りたいとき |
+| 設計判断の記録 | `docs/adr/README.md` | 設計を変える前、過去の判断の理由を知りたいとき |
 | 計画の書式 | `docs/PLANS.md` | 計画を書くとき、計画を読むとき |
 | 進行中の計画 | `docs/exec-plans/active/` | 作業を再開するとき |
 | 完了した計画 | `docs/exec-plans/completed/` | 過去の作業の経緯を知りたいとき |
