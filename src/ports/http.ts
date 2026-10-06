@@ -17,6 +17,22 @@ export const fetchHttpClient: HttpClient = {
   },
 };
 
+/**
+ * HttpClient を包み、get が timeoutMs ミリ秒のうちに決まらなければ例外で失敗させる。
+ * 時間切れの後も元の要求は中断されない（呼び出し側が待たなくなるだけ）。
+ */
+export function withTimeout(client: HttpClient, timeoutMs: number): HttpClient {
+  return {
+    get: (url) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`HTTP の要求が ${timeoutMs} ミリ秒で時間切れになりました: ${url}`)), timeoutMs);
+      });
+      return Promise.race([client.get(url), timeout]).finally(() => clearTimeout(timer));
+    },
+  };
+}
+
 /** URL ごとに決まった応答を返す。登録の無い URL は 404 を返す。 */
 export function fixtureHttpClient(responses: Record<string, HttpResponse>): HttpClient {
   return {
