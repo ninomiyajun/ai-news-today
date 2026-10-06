@@ -54,6 +54,12 @@
 3. 秘匿値は、ブラウザへ渡るコードに置かない。`NEXT_PUBLIC_` で始まる環境変数に鍵を置かない（`AGENTS.md`）。
 4. 取得した記事の本文と翻訳は、リポジトリに置かない（`AGENTS.md`）。保存する場所を決めたら、同じ変更で
    `.gitignore` に入れる。
+5. ブラウザに読み込ませる外部のスクリプトは、X の埋め込みのスクリプト `https://platform.twitter.com/widgets.js` だけとする
+   （それが自分で読み込む X のリソースを含む）。この URL は `src/ui/XPostEmbed.tsx` の定数 `WIDGETS_JS_URL` の 1 か所にだけ置く。
+   ESLint が、`next/script` の import を `src/ui/XPostEmbed.tsx` の外で拒否し、JSX の `script` 要素と、`require()` と `import()` での
+   `next/script` の読み込みを `src/` の下のすべてで拒否する（`eslint.config.mjs`）。`React.createElement("script")` や DOM の操作など、
+   別の書き方で読み込む形は ESLint では止められないので、レビューで人が確かめる。1 とは別の関心事（ブラウザに読み込ませる外部のスクリプトの信頼の範囲）で、理由は
+   `docs/adr/0003-x-post-embed.md`。
 
 ## 将来の作りの注意（記事の取得を実装するとき）
 
@@ -63,6 +69,13 @@
   URL は画面のリンク（`src/ui/NewsList.tsx` の `href`）にそのまま入るためである。
 - 記事の id には情報源の名前を含める（例: `hn:12345`、`hatena:...`）。情報源が違うと id が重なりうるうえ、
   id を画面の要素の key に使っているためである。
+- X の投稿の URL は、`src/curation/x-post-url.ts` で正規の形（`https://x.com/<利用者名>/status/<id>`。クエリ、断片、
+  `/status/<id>` の後ろの道を落とす）にそろえてから扱う。記事に添える文章（`NewsItem` の `text`）は、HTML の実体参照を
+  解いた平文で渡す（HTML から平文にするのは情報源の責務）。
+- X の oEmbed の応答の `html` は、画面に入れない（`dangerouslySetInnerHTML` を使わない）。外から受け取った HTML を入れると、
+  応答の中身しだいで任意のスクリプトが画面で動きうるためである。埋め込みは、正規の形の URL から React の要素で組み立てる。
+- `widgets.js`（不変条件 5）は、このアプリと同じ origin で制限なしに動き、画面の DOM と同じ origin の入口を呼べる。
+  状態を変える入口（ブックマークレットの登録、翻訳の実行など）を作るときは、このスクリプトから呼ばれうることを前提に設計する。
 
 ## 中核的な原則
 

@@ -16,11 +16,54 @@ const NETWORK_GLOBALS = ["fetch", "WebSocket", "XMLHttpRequest", "EventSource"];
 const globalMessage = (name) => `${name} を直接使わないでください。${portsOnly}`;
 const networkMessage = `通信のためのモジュール（${NETWORK_MODULES.join("、")}）を src/ports/ の外で使わないでください。${portsOnly}`;
 
+// ブラウザに読み込ませる外部のスクリプトは src/ui/XPostEmbed.tsx の WIDGETS_JS_URL だけにする（ARCHITECTURE.md の不変条件 5）。
+// そのため next/script の import をこのファイルの外で拒否し、JSX の script 要素を src/ の下のすべてで拒否する。
+const SRC_FILES = "src/**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts}";
+const SCRIPT_OWNER = "src/ui/XPostEmbed.tsx";
+const externalScriptMessage =
+  "外部のスクリプトは src/ui/XPostEmbed.tsx の WIDGETS_JS_URL からだけ読み込んでください（ARCHITECTURE.md の不変条件 5）。";
+const nextScriptImport = { name: "next/script", message: externalScriptMessage };
+// require() と import() で next/script を読み込む形も拒否する。静的な import は no-restricted-imports で拒否する。
+// src/ui/XPostEmbed.tsx も静的な import だけを使うので、この 2 つはそのファイルでも拒否してよい。
+const externalScriptSyntax = [
+  {
+    selector: "JSXOpeningElement[name.name='script']",
+    message: `JSX の script 要素を使わないでください。${externalScriptMessage}`,
+  },
+  {
+    selector: "CallExpression[callee.name='require'] > Literal.arguments[value='next/script']",
+    message: externalScriptMessage,
+  },
+  {
+    selector: "ImportExpression > Literal.source[value='next/script']",
+    message: externalScriptMessage,
+  },
+];
+const networkImports = NETWORK_MODULES.map((name) => ({ name, message: networkMessage }));
+const portsSyntax = [
+  {
+    selector: "NewExpression[callee.name='Date'][arguments.length=0]",
+    message: `引数の無い new Date() で現在時刻を得ないでください。${portsOnly}`,
+  },
+  {
+    selector: "CallExpression[callee.name='Date']",
+    message: `Date() で現在時刻を得ないでください（new を付けない呼び出しは現在時刻の文字列を返す）。${portsOnly}`,
+  },
+  {
+    selector: `CallExpression[callee.name='require'] > Literal.arguments[value=${networkModulePattern}]`,
+    message: networkMessage,
+  },
+  {
+    selector: `ImportExpression > Literal.source[value=${networkModulePattern}]`,
+    message: networkMessage,
+  },
+];
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   {
-    files: ["src/**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts}"],
+    files: [SRC_FILES],
     ignores: ["src/ports/**"],
     rules: {
       "no-restricted-globals": ["error", ...NETWORK_GLOBALS.map((name) => ({ name, message: globalMessage(name) }))],
@@ -32,29 +75,24 @@ const eslintConfig = defineConfig([
           NETWORK_GLOBALS.map((property) => ({ object, property, message: globalMessage(`${object}.${property}`) })),
         ),
       ],
-      "no-restricted-imports": [
-        "error",
-        { paths: NETWORK_MODULES.map((name) => ({ name, message: networkMessage })) },
-      ],
-      "no-restricted-syntax": [
-        "error",
-        {
-          selector: "NewExpression[callee.name='Date'][arguments.length=0]",
-          message: `引数の無い new Date() で現在時刻を得ないでください。${portsOnly}`,
-        },
-        {
-          selector: "CallExpression[callee.name='Date']",
-          message: `Date() で現在時刻を得ないでください（new を付けない呼び出しは現在時刻の文字列を返す）。${portsOnly}`,
-        },
-        {
-          selector: `CallExpression[callee.name='require'] > Literal.arguments[value=${networkModulePattern}]`,
-          message: networkMessage,
-        },
-        {
-          selector: `ImportExpression > Literal.source[value=${networkModulePattern}]`,
-          message: networkMessage,
-        },
-      ],
+      "no-restricted-imports": ["error", { paths: [...networkImports, nextScriptImport] }],
+      "no-restricted-syntax": ["error", ...portsSyntax, ...externalScriptSyntax],
+    },
+  },
+  // 不変条件 5 の例外: next/script の import は src/ui/XPostEmbed.tsx でだけ許す。
+  // 同じ規則の設定は後のものが前のものを置き換えるので、不変条件 1、2 の import の制限はここでも並べ直す。
+  {
+    files: [SCRIPT_OWNER],
+    rules: {
+      "no-restricted-imports": ["error", { paths: networkImports }],
+    },
+  },
+  // src/ports/ は不変条件 1、2 の対象外だが、不変条件 5 は適用する。
+  {
+    files: ["src/ports/**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts}"],
+    rules: {
+      "no-restricted-imports": ["error", { paths: [nextScriptImport] }],
+      "no-restricted-syntax": ["error", ...externalScriptSyntax],
     },
   },
   // Override default ignores of eslint-config-next.
