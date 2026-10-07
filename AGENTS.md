@@ -51,11 +51,12 @@ ai-news-today（GitHub）に置く。現在は土台だけで、記事の取得�
 | lint | `npm run lint` |
 | 型 | `npm run typecheck` |
 | 試験 | `npm run test` |
-| 文書（必須のファイル、CLAUDE.md、地図、リンク、目録、行数、計画の必須の節） | `npm run check:docs` |
+| 文書（必須のファイル、CLAUDE.md、地図、リンク、目録、行数、計画の必須の節、受け入れ確認の記録） | `npm run check:docs` |
+| 文書の検査の試験（`check-docs.sh` の計画と受け入れ確認の記録の検査） | `npm run test:harness` |
 | 層の依存の向きと、`src/` の直下の名前 | `npm run check:arch` |
 | 秘匿値（作業ツリーの、コミットする全ファイル） | `npm run check:secrets` |
 | 秘匿値（push する範囲の各コミットの中身） | `npm run check:secrets:push` |
-| 手元で起動 | `npm run dev`（http://127.0.0.1:3000） |
+| 手元で起動 | `npm run dev`（http://127.0.0.1:3000）。確認用のデータ（決まった記事と時刻。外部へ通信しない。画面に「確認用のデータで表示中」が出る）で起動するときは `AI_NEWS_FIXTURE=sample npm run dev -- -p <ポート>`（3000 は普段の起動に使うので、確認には 3100 以上を使う。`docs/adr/0004-fixture-data-for-acceptance.md`） |
 
 リンクの検査が見るのは、インラインのリンクと画像（角括弧の文字の直後に、丸括弧で囲んだ先を続ける形）で、先に空白も
 `)` も含まないものだけである。参照形式のリンク、山括弧で囲んだ先、タイトル付きの先、自動リンク、HTML の a 要素は検査しないので、
@@ -68,6 +69,7 @@ ai-news-today（GitHub）に置く。現在は土台だけで、記事の取得�
 | 設計の正本（層、依存の向き、不変条件） | `ARCHITECTURE.md` | コードを変える前 |
 | 設計判断の記録 | `docs/adr/README.md` | 設計を変える前、過去の判断の理由を知りたいとき |
 | 計画の書式 | `docs/PLANS.md` | 計画を書くとき、計画を読むとき |
+| アプリの起動の手順 | `.claude/skills/run-ai-news-today/SKILL.md` | アプリを起動して画面を確かめるとき（受け入れ確認を含む） |
 | 進行中の計画 | `docs/exec-plans/active/` | 作業を再開するとき |
 | 完了した計画 | `docs/exec-plans/completed/` | 過去の作業の経緯を知りたいとき |
 | 品質目標 | `docs/QUALITY_SCORE.md` | 設計の品質を判断するとき |

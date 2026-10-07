@@ -63,5 +63,7 @@ jobs:
         run: npm run test
       - name: check-docs
         run: npm run check:docs
+      - name: test-harness（文書の検査の試験）
+        run: npm run test:harness
       - name: check-arch
         run: npm run check:arch
