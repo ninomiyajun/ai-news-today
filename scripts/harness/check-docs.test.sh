@@ -436,11 +436,13 @@ run_case "docs/PLANS.md に適用開始の行が無い" fail "「新しい書式
 
 SP="docs/product-specs"
 
-# 仕様の置き場を作り、本物の docs/product-specs/README.md（書式と、空の目録）を写す。README.md がリンクする
+# 仕様の置き場を作り、本物の docs/product-specs/README.md の書式（目録の節より前）と、目録の表の見出しの 2 行を写す。
+# 目録の表の本文の行（実際に登録された仕様）は取り除き、空の目録にする。残すと、実際に仕様が登録されたとき、
+# 写した先にその仕様のファイルが無く、通るはずの試験が失敗するため。README.md がリンクする
 # 製品の前提（docs/PRODUCT_SENSE.md）も写す（検査 4 のリンクの検査を通すため）
 add_spec_dir() {
   mkdir -p "$1/$SP"
-  cp "$SPECS_README" "$1/$SP/README.md"
+  awk '/^## 目録$/ { in_catalog = 1 } !(in_catalog && /^\| / && !/^\| 略号 /)' "$SPECS_README" > "$1/$SP/README.md"
   cp "$ROOT/docs/PRODUCT_SENSE.md" "$1/docs/PRODUCT_SENSE.md"
 }
 
