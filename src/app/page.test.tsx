@@ -23,6 +23,10 @@ async function renderHome(): Promise<string> {
   return renderToStaticMarkup(await Home());
 }
 
+function scoresOf(html: string): number[] {
+  return [...html.matchAll(/<small>\((\d+)\)<\/small>/g)].map((m) => Number(m[1]));
+}
+
 describe("画面（確認用のデータ）", () => {
   it("AI_NEWS_FIXTURE=sample のとき、文言と決まった記事を点数の高い順に出し、外部へ通信しない", async () => {
     vi.stubEnv("AI_NEWS_FIXTURE", "sample");
@@ -39,6 +43,33 @@ describe("画面（確認用のデータ）", () => {
     const html = await renderHome();
     expect(html).not.toContain("確認用のデータで表示中");
     expect(html).toContain("表示できる記事はまだありません。");
+  });
+
+  it.each([
+    ["(a)", { min: "100" }, [412, 156], "点数 100 以上を表示中"],
+    ["(b)", { min: "88" }, [412, 156, 88], "点数 88 以上を表示中"],
+    ["(c)", { min: "abc" }, [412, 156, 88, 37], null],
+    ["(d)", {}, [412, 156, 88, 37], null],
+    ["(f)", { min: "0" }, [412, 156, 88, 37], "点数 0 以上を表示中"],
+    ["(g)", { min: "088" }, [412, 156, 88], "点数 88 以上を表示中"],
+  ] as const)("%s クエリ %j で、点数 %j の記事と下限の文言を出し、外部へ通信しない", async (_label, query, expected, notice) => {
+    vi.stubEnv("AI_NEWS_FIXTURE", "sample");
+    const html = renderToStaticMarkup(await Home({ searchParams: Promise.resolve(query) }));
+    expect(scoresOf(html)).toEqual(expected);
+    if (notice === null) {
+      expect(html).not.toContain("以上を表示中");
+    } else {
+      expect(html).toContain(notice);
+    }
+    expect(fetchCalls).toEqual([]);
+  });
+
+  it("(e) 引数なしで呼ぶと、4 件を出し、下限の文言を出さない", async () => {
+    vi.stubEnv("AI_NEWS_FIXTURE", "sample");
+    const html = await renderHome();
+    expect(scoresOf(html)).toEqual([412, 156, 88, 37]);
+    expect(html).not.toContain("以上を表示中");
+    expect(fetchCalls).toEqual([]);
   });
 
   it("NODE_ENV=production のときは、AI_NEWS_FIXTURE=sample でも文言を出さない", async () => {
