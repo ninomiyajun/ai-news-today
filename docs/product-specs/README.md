@@ -114,3 +114,4 @@
 
 | 略号 | 仕様 | 題 | 状態 |
 |---|---|---|---|
+| SRC | [news-by-source.md](news-by-source.md) | 今日のニュースを情報源ごとの節に分けて表示する | approved |
