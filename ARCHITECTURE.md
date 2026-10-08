@@ -11,12 +11,20 @@
 |---|---|---|
 | 画面 | `src/app/` | Next.js の画面とルート。組み立てだけを行い、取得や選別の処理を書かない |
 | 表示の部品 | `src/ui/` | 受け取った値を表示する部品。取得も選別もしない |
-| 組み立て | `src/composition/` | 実行時の依存（本物の時計、情報源）を選んで束ねる。本物の実装を選ぶのはこの層だけ |
+| 組み立て | `src/composition/` | 実行時の依存（本物の時計、情報源）を選んで束ねる。本物の実装を選ぶのはこの層だけ。確認用のデータを使うかの判定と選択もこの層で行い、データは持たない |
 | 処理の流れ | `src/services/` | 取得と整形・選別を束ねる。依存は引数で受け取る |
-| 取得 | `src/sources/` | 情報源（Hacker News、はてなブックマーク、X の oEmbed）から取得し、`src/domain/` の型にそろえる |
+| 取得 | `src/sources/` | 情報源（Hacker News、はてなブックマーク、X の oEmbed）から取得し、`src/domain/` の型にそろえる。確認用のデータ（決まった記事、基準の時刻、X の oEmbed の決まった応答）は `src/sources/fixture.ts` の 1 ファイルに置く |
 | 整形・選別 | `src/curation/` | 純粋な関数だけ。取得も現在時刻の取得もしない（時刻は引数で受け取る） |
 | 外部と時刻の入口 | `src/ports/` | 外部への HTTP（`src/ports/http.ts`）と現在時刻（`src/ports/clock.ts`）の型、本物の実装、試験用の決まった実装 |
 | 型 | `src/domain/` | 記事などの型。他の層を import しない |
+
+### 確認用のデータ
+
+環境変数 `AI_NEWS_FIXTURE=sample` を付け、かつ `NODE_ENV` が `production` でない起動（`next dev` など）では、
+`src/composition/runtime.ts` が、本物の情報源と時計と HTTP の入口の代わりに、`src/sources/fixture.ts` の決まった記事と
+基準の時刻（`fixedClock`）と決まった応答（`fixtureHttpClient`）を選ぶ。外部へは通信しない。画面の層はこの判定を
+受け取り、`src/ui/FixtureNotice.tsx` で画面の上に「確認用のデータで表示中」を出す。受け入れ確認でコードを書き換えずに
+画面を確かめるための仕組みで、理由は `docs/adr/0004-fixture-data-for-acceptance.md`。
 
 ## 依存の向き
 
