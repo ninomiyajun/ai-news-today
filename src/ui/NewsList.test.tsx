@@ -31,10 +31,11 @@ beforeEach(() => {
 });
 
 describe("NewsList（基準 9）", () => {
-  it("(a) 埋め込みの情報を渡さないと、変更前と同じ出力になる", () => {
-    // 期待値は、NewsList を変える前に同じ入力で得た出力（計画の手順 7）
+  it("(a) 埋め込みの情報を渡さないと、点数に単位を付けたほかは変更前と同じ出力になる", () => {
+    // 期待値は、NewsList を変える前に同じ入力で得た出力（計画の手順 7）を、点数に単位を付けた形
+    // （2026-10-08-news-by-source の手順 5）に直したもの
     expect(renderToStaticMarkup(<NewsList items={[ITEM]} />)).toBe(
-      '<ul><li><a href="https://example.com/1" target="_blank" rel="noopener noreferrer">t</a> <small>(3)</small></li></ul>',
+      '<ul><li><a href="https://example.com/1" target="_blank" rel="noopener noreferrer">t</a> <small>3 点</small></li></ul>',
     );
   });
 
@@ -50,26 +51,16 @@ describe("NewsList（基準 9）", () => {
 });
 
 describe("NewsList の外部のスクリプト（基準 10）", () => {
+  // Script の描画の回数の試験は、画面に 1 つだけ置く NewsSections の試験（src/ui/NewsSections.test.tsx）へ移した。
   const ITEM2: NewsItem = { ...ITEM, id: "2", url: "https://example.com/2" };
 
   it("スクリプトの定数は widgets.js の URL である", () => {
     expect(WIDGETS_JS_URL).toBe("https://platform.twitter.com/widgets.js");
   });
 
-  it("(a) 埋め込みが 0 件なら Script を描かない", () => {
+  it("NewsList は、埋め込みの有無にかかわらず Script を描かない", () => {
     renderToStaticMarkup(<NewsList items={[ITEM, ITEM2]} xPosts={{ "1": [], "2": [] }} />);
-    expect(scriptCalls).toHaveLength(0);
-  });
-
-  it("(b) 埋め込みが 1 件なら Script を 1 回だけ、定数の src で描く", () => {
-    renderToStaticMarkup(<NewsList items={[ITEM]} xPosts={{ "1": [embed(1)] }} />);
-    expect(scriptCalls).toHaveLength(1);
-    expect(scriptCalls[0].src).toBe(WIDGETS_JS_URL);
-  });
-
-  it("(c) 埋め込みが 3 件（記事 2 件に分かれる）でも Script は 1 回だけ描く", () => {
     renderToStaticMarkup(<NewsList items={[ITEM, ITEM2]} xPosts={{ "1": [embed(1), embed(2)], "2": [embed(3)] }} />);
-    expect(scriptCalls).toHaveLength(1);
-    expect(scriptCalls[0].src).toBe(WIDGETS_JS_URL);
+    expect(scriptCalls).toHaveLength(0);
   });
 });

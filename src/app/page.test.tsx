@@ -23,17 +23,17 @@ async function renderHome(): Promise<string> {
   return renderToStaticMarkup(await Home());
 }
 
+/** 出力の点数を、表示の順（Hacker News の節、はてなブックマークの節の順）に読み取る。 */
 function scoresOf(html: string): number[] {
-  return [...html.matchAll(/<small>\((\d+)\)<\/small>/g)].map((m) => Number(m[1]));
+  return [...html.matchAll(/<small>(\d+) (?:点|ブックマーク)<\/small>/g)].map((m) => Number(m[1]));
 }
 
 describe("画面（確認用のデータ）", () => {
-  it("AI_NEWS_FIXTURE=sample のとき、文言と決まった記事を点数の高い順に出し、外部へ通信しない", async () => {
+  it("AI_NEWS_FIXTURE=sample のとき、文言と決まった記事を節ごとに点数の高い順に出し、外部へ通信しない", async () => {
     vi.stubEnv("AI_NEWS_FIXTURE", "sample");
     const html = await renderHome();
     expect(html).toContain("確認用のデータで表示中");
-    const scores = [...html.matchAll(/<small>\((\d+)\)<\/small>/g)].map((m) => Number(m[1]));
-    expect(scores).toEqual([412, 156, 88, 37]);
+    expect(scoresOf(html)).toEqual([412, 88, 156, 37]);
     expect(html).not.toContain("表示されない");
     expect(fetchCalls).toEqual([]);
   });
@@ -47,11 +47,11 @@ describe("画面（確認用のデータ）", () => {
 
   it.each([
     ["(a)", { min: "100" }, [412, 156], "点数 100 以上を表示中"],
-    ["(b)", { min: "88" }, [412, 156, 88], "点数 88 以上を表示中"],
-    ["(c)", { min: "abc" }, [412, 156, 88, 37], null],
-    ["(d)", {}, [412, 156, 88, 37], null],
-    ["(f)", { min: "0" }, [412, 156, 88, 37], "点数 0 以上を表示中"],
-    ["(g)", { min: "088" }, [412, 156, 88], "点数 88 以上を表示中"],
+    ["(b)", { min: "88" }, [412, 88, 156], "点数 88 以上を表示中"],
+    ["(c)", { min: "abc" }, [412, 88, 156, 37], null],
+    ["(d)", {}, [412, 88, 156, 37], null],
+    ["(f)", { min: "0" }, [412, 88, 156, 37], "点数 0 以上を表示中"],
+    ["(g)", { min: "088" }, [412, 88, 156], "点数 88 以上を表示中"],
   ] as const)("%s クエリ %j で、点数 %j の記事と下限の文言を出し、外部へ通信しない", async (_label, query, expected, notice) => {
     vi.stubEnv("AI_NEWS_FIXTURE", "sample");
     const html = renderToStaticMarkup(await Home({ searchParams: Promise.resolve(query) }));
@@ -67,7 +67,7 @@ describe("画面（確認用のデータ）", () => {
   it("(e) 引数なしで呼ぶと、4 件を出し、下限の文言を出さない", async () => {
     vi.stubEnv("AI_NEWS_FIXTURE", "sample");
     const html = await renderHome();
-    expect(scoresOf(html)).toEqual([412, 156, 88, 37]);
+    expect(scoresOf(html)).toEqual([412, 88, 156, 37]);
     expect(html).not.toContain("以上を表示中");
     expect(fetchCalls).toEqual([]);
   });

@@ -19,6 +19,15 @@ export type NewsItem = {
   text?: string;
 };
 
+/**
+ * 1 つの情報源の記事だけを集めた、画面の区画（節）。節を作るのは整形・選別の層で、表示するのは表示の部品の層なので、
+ * 両方から使える型の層に置く。
+ */
+export type NewsSection = {
+  source: NewsSourceId;
+  items: NewsItem[];
+};
+
 /** X の投稿の埋め込みの情報。oEmbed の応答から取り出した値だけを持ち、応答の HTML は持たない。 */
 export type XPostEmbed = {
   /** 投稿の URL の正規の形（https://x.com/<利用者名>/status/<id>） */

@@ -1,7 +1,9 @@
 // 表示の部品の層。受け取った記事を表示するだけで、取得や選別はしない。
+// 1 つの節の記事の一覧を描く。0 件のときの文言と X の埋め込みのスクリプトは、画面に 1 つだけ置く NewsSections が描く。
 
 import type { NewsItem, XPostEmbed } from "@/domain/news";
-import { XPostCard, XWidgetsScript } from "@/ui/XPostEmbed";
+import { scoreText } from "@/ui/source-labels";
+import { XPostCard } from "@/ui/XPostEmbed";
 
 type Props = {
   items: readonly NewsItem[];
@@ -10,33 +12,26 @@ type Props = {
 };
 
 export function NewsList({ items, xPosts = {} }: Props) {
-  if (items.length === 0) {
-    return <p>表示できる記事はまだありません。</p>;
-  }
-  const hasEmbeds = items.some((item) => (xPosts[item.id]?.length ?? 0) > 0);
   return (
-    <>
-      <ul>
-        {items.map((item) => {
-          const embeds = xPosts[item.id] ?? [];
-          return (
-            <li key={item.id}>
-              <a href={item.url} target="_blank" rel="noopener noreferrer">
-                {item.title}
-              </a>{" "}
-              <small>({item.score})</small>
-              {embeds.length > 0 && (
-                <div>
-                  {embeds.map((embed) => (
-                    <XPostCard key={embed.postUrl} embed={embed} />
-                  ))}
-                </div>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-      {hasEmbeds && <XWidgetsScript />}
-    </>
+    <ul>
+      {items.map((item) => {
+        const embeds = xPosts[item.id] ?? [];
+        return (
+          <li key={item.id}>
+            <a href={item.url} target="_blank" rel="noopener noreferrer">
+              {item.title}
+            </a>{" "}
+            <small>{scoreText(item.source, item.score)}</small>
+            {embeds.length > 0 && (
+              <div>
+                {embeds.map((embed) => (
+                  <XPostCard key={embed.postUrl} embed={embed} />
+                ))}
+              </div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
