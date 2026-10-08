@@ -51,8 +51,8 @@ ai-news-today（GitHub）に置く。現在は土台だけで、記事の取得�
 | lint | `npm run lint` |
 | 型 | `npm run typecheck` |
 | 試験 | `npm run test` |
-| 文書（必須のファイル、CLAUDE.md、地図、リンク、目録、行数、計画の必須の節、受け入れ確認の記録） | `npm run check:docs` |
-| 文書の検査の試験（`check-docs.sh` の計画と受け入れ確認の記録の検査） | `npm run test:harness` |
+| 文書（必須のファイル、CLAUDE.md、地図、リンク、目録、行数、計画の必須の節、受け入れ確認の記録、製品の仕様の目録と状態） | `npm run check:docs` |
+| 文書の検査の試験（`check-docs.sh` の計画、受け入れ確認の記録、仕様の検査） | `npm run test:harness` |
 | 層の依存の向きと、`src/` の直下の名前 | `npm run check:arch` |
 | 秘匿値（作業ツリーの、コミットする全ファイル） | `npm run check:secrets` |
 | 秘匿値（push する範囲の各コミットの中身） | `npm run check:secrets:push` |
@@ -68,6 +68,8 @@ ai-news-today（GitHub）に置く。現在は土台だけで、記事の取得�
 |---|---|---|
 | 設計の正本（層、依存の向き、不変条件） | `ARCHITECTURE.md` | コードを変える前 |
 | 設計判断の記録 | `docs/adr/README.md` | 設計を変える前、過去の判断の理由を知りたいとき |
+| 製品の前提 | `docs/PRODUCT_SENSE.md` | 新しい機能や画面を考えるとき |
+| 製品の仕様（書式と目録） | `docs/product-specs/README.md` | 新しい機能や画面の仕様を書くとき、仕様を引く計画を書くとき・確かめるとき |
 | 計画の書式 | `docs/PLANS.md` | 計画を書くとき、計画を読むとき |
 | アプリの起動の手順 | `.claude/skills/run-ai-news-today/SKILL.md` | アプリを起動して画面を確かめるとき（受け入れ確認を含む） |
 | 進行中の計画 | `docs/exec-plans/active/` | 作業を再開するとき |
