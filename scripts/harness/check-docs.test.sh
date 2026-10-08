@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
-# check-docs.sh の試験（検査 8 と検査 9: 受け入れ確認の記録）。手元と CI で同じコマンドを使う: npm run test:harness
+# check-docs.sh の試験（検査 8、検査 9: 受け入れ確認の記録、検査 10: 製品の仕様）。手元と CI で同じコマンドを使う:
+# npm run test:harness
 #
 # 場合ごとに、一時ディレクトリに小さなリポジトリ（git init だけ。コミットはしない）を作り、check-docs.sh の写しと
-# 本物の docs/PLANS.md の写しを置いて、計画と記録の組を変えて動かす。終了コードと、失敗のときは理由の文言を確かめる。
-# 計画と記録の見本はこのファイルの中で作り、リポジトリに Markdown の見本を置かない（検査 4 と検査 8 が見本を拾うため）。
+# 本物の docs/PLANS.md の写し（検査 10 の場合は本物の docs/product-specs/README.md の写しも）を置いて、計画・記録・仕様の
+# 組を変えて動かす。終了コードと、失敗のときは理由の文言を確かめる。
+# 計画・記録・仕様の見本はこのファイルの中で作り、リポジトリに Markdown の見本を置かない（検査 4、8、10 が見本を拾うため）。
+# 仕様の見本の題材は、アプリの実際の機能と関係の無い架空の機能（一覧の文字の大きさの切り替え）にする。
 set -euo pipefail
 export LC_ALL=C
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CHECK="$ROOT/scripts/harness/check-docs.sh"
 PLANS="$ROOT/docs/PLANS.md"
+SPECS_README="$ROOT/docs/product-specs/README.md"
 
 TMP_ROOT="$(mktemp -d)"
 trap 'rm -rf "$TMP_ROOT"' EXIT
@@ -45,18 +49,24 @@ make_base() {
   git -C "$d" init -q
 }
 
-# 計画を書く。$1 = パス、$2 = 検証の節の本文。必須の節の見出しは本物の docs/PLANS.md から読む
+# 書式の文書（$1）の「## 必須の節」から、必須の見出しを 1 行ずつ出す
+required_headings() {
+  awk '/^## 必須の節$/{on=1; next} /^## /{on=0} on' "$1" | sed -n 's/^[0-9][0-9]*\. `\(## [^`]*\)`.*$/\1/p'
+}
+
+# 計画を書く。$1 = パス、$2 = 検証の節の本文、$3 = 目的の節の本文（省略可）。必須の節の見出しは本物の docs/PLANS.md から読む
 write_plan() {
-  local path="$1" verification="$2" heading
+  local path="$1" verification="$2" purpose="${3:-}" heading
   {
     printf '# 試験の計画\n\n'
-    awk '/^## 必須の節$/{on=1; next} /^## /{on=0} on' "$PLANS" | sed -n 's/^[0-9][0-9]*\. `\(## [^`]*\)`.*$/\1/p' \
-      | while IFS= read -r heading; do
-          printf '%s\n\n' "$heading"
-          if [ "$heading" = "## 検証（完了の条件）" ]; then
-            printf '%s\n\n' "$verification"
-          fi
-        done
+    required_headings "$PLANS" | while IFS= read -r heading; do
+      printf '%s\n\n' "$heading"
+      if [ "$heading" = "## 検証（完了の条件）" ]; then
+        printf '%s\n\n' "$verification"
+      elif [ "$heading" = "## 目的" ] && [ -n "$purpose" ]; then
+        printf '%s\n\n' "$purpose"
+      fi
+    done
   } > "$path"
 }
 
@@ -421,6 +431,315 @@ run_case "記録に閉じていないコードブロック" fail "閉じてい�
 run_case "日付で始まらない名前の完了した計画（検査 9 の対象）" fail "受け入れ確認の記録 $C/score-filter.acceptance.md がありません" setup_undated_completed_plan
 run_case "置き場の取り違えの逆向き（計画は active/、記録は completed/）" fail "と別のディレクトリにあります" setup_misplaced_reverse
 run_case "docs/PLANS.md に適用開始の行が無い" fail "「新しい書式の適用開始: YYYY-MM-DD」の行がありません" setup_no_start_line
+
+# --- 検査 10: 製品の仕様 ---
+
+SP="docs/product-specs"
+
+# 仕様の置き場を作り、本物の docs/product-specs/README.md（書式と、空の目録）を写す。README.md がリンクする
+# 製品の前提（docs/PRODUCT_SENSE.md）も写す（検査 4 のリンクの検査を通すため）
+add_spec_dir() {
+  mkdir -p "$1/$SP"
+  cp "$SPECS_README" "$1/$SP/README.md"
+  cp "$ROOT/docs/PRODUCT_SENSE.md" "$1/docs/PRODUCT_SENSE.md"
+}
+
+# 目録に 1 行を足す。$1 = リポジトリ、$2 = 略号、$3 = 仕様のファイル名、$4 = 状態。
+# 目録の節はファイルの最後にある（書式の文書の決まり）ので、末尾に足せば表の行になる
+add_catalog_row() {
+  printf '| %s | [%s](%s) | 文字の大きさの切り替え | %s |\n' "$2" "$3" "$3" "$4" >> "$1/$SP/README.md"
+}
+
+# 受け入れ基準 1 件。$1 = 識別子
+criterion() {
+  printf '### %s 文字の大きさを「大」にすると、一覧の文字が大きくなる\n\n- 前提: 一覧が標準の文字の大きさで表示されている。\n- 操作: 文字の大きさの切り替えで「大」を選ぶ。\n- 期待する結果: 一覧の各項目の題が、標準より大きい文字で表示される。\n' "$1"
+}
+
+# 仕様を書く。$1 = パス、$2 = 受け入れ基準の節の本文、$3 = 未決の点の節の本文（省略時は「なし」）。
+# 必須の節の見出しは本物の docs/product-specs/README.md から読む
+write_spec() {
+  local path="$1" criteria="$2" open="${3:-なし}" heading
+  {
+    printf '# 一覧の文字の大きさの切り替え\n\n'
+    required_headings "$SPECS_README" | while IFS= read -r heading; do
+      printf '%s\n\n' "$heading"
+      case "$heading" in
+        "## 受け入れ基準") printf '%s\n\n' "$criteria" ;;
+        "## 未決の点") printf '%s\n\n' "$open" ;;
+        *) printf '試験の本文。\n\n' ;;
+      esac
+    done
+  } > "$path"
+}
+
+# 正しい仕様 1 件（略号 FONT、基準 FONT-1 と FONT-2）を、状態 $2 で置く
+add_font_spec() {
+  add_spec_dir "$1"
+  write_spec "$1/$SP/list-font-size.md" "$(criterion FONT-1)
+
+$(criterion FONT-2)"
+  add_catalog_row "$1" FONT list-font-size.md "$2"
+}
+
+# 仕様の基準 FONT-1 と、計画の中で振る基準 V1 を引く検証の節（確かめ方は自動テストなので、受け入れ確認の記録は要らない）
+VERIFY_SPEC='### FONT-1 文字の大きさを「大」にすると、一覧の文字が大きくなる
+
+- 前提: 仕様のとおり。
+- 操作: 仕様のとおり。
+- 期待する結果: 仕様のとおり。
+- 確かめ方: 自動テスト
+
+### V1 切り替えの部品の試験が通る
+
+- 確かめ方: 自動テスト'
+PURPOSE_SPEC='一覧の文字の大きさを切り替えられるようにする。製品の仕様: `docs/product-specs/list-font-size.md`'
+PURPOSE_NONE='一覧の文字の大きさを切り替えられるようにする。製品の仕様は無い。'
+VERIFY_V_ONLY='### V1 切り替えの部品の試験が通る
+
+- 確かめ方: 自動テスト'
+
+# --- 検査 10: 通る場合 ---
+
+setup_spec_correct() { add_font_spec "$1" draft; }
+setup_spec_catalog_empty() { add_spec_dir "$1"; }
+setup_spec_no_dir_v_only() {
+  write_plan "$1/$A/$NEW.md" "$VERIFY_V_ONLY" "$PURPOSE_NONE"
+  write_plan "$1/$C/$NEW-done.md" "$VERIFY_V_ONLY" "$PURPOSE_NONE"
+}
+setup_spec_active_approved() {
+  add_font_spec "$1" approved
+  write_plan "$1/$A/$NEW.md" "$VERIFY_SPEC" "$PURPOSE_SPEC"
+}
+setup_spec_completed_approved() {
+  add_font_spec "$1" approved
+  write_plan "$1/$C/$NEW.md" "$VERIFY_SPEC" "$PURPOSE_SPEC"
+}
+setup_spec_completed_archived() {
+  add_font_spec "$1" archived
+  write_plan "$1/$C/$NEW.md" "$VERIFY_SPEC" "$PURPOSE_SPEC"
+}
+setup_spec_draft_open_question() {
+  add_spec_dir "$1"
+  write_spec "$1/$SP/list-font-size.md" "$(criterion FONT-1)" '- [NEEDS CLARIFICATION: 文字の大きさの段階は 2 つか 3 つか]'
+  add_catalog_row "$1" FONT list-font-size.md draft
+}
+# 旧い書式の計画は、仕様と照合しない
+setup_spec_old_plan_ignored() {
+  write_plan "$1/$C/$OLD.md" "$VERIFY_SPEC" "$PURPOSE_NONE"
+}
+
+# --- 検査 10: 失敗する場合 ---
+
+setup_spec_not_in_catalog() {
+  add_spec_dir "$1"
+  write_spec "$1/$SP/list-font-size.md" "$(criterion FONT-1)"
+}
+setup_spec_missing_file() {
+  add_spec_dir "$1"
+  add_catalog_row "$1" FONT list-font-size.md draft
+}
+setup_spec_bad_status() { add_font_spec "$1" done; }
+setup_spec_status_line() {
+  add_font_spec "$1" draft
+  printf '状態: draft\n' >> "$1/$SP/list-font-size.md"
+}
+setup_spec_approved_open_question() {
+  add_spec_dir "$1"
+  write_spec "$1/$SP/list-font-size.md" "$(criterion FONT-1)" '- [NEEDS CLARIFICATION: 文字の大きさの段階は 2 つか 3 つか]'
+  add_catalog_row "$1" FONT list-font-size.md approved
+}
+setup_spec_missing_section() {
+  add_font_spec "$1" draft
+  grep -vxF '## 利用者の操作の流れ' "$1/$SP/list-font-size.md" > "$1/$SP/tmp" && mv "$1/$SP/tmp" "$1/$SP/list-font-size.md"
+}
+setup_spec_bad_abbr() {
+  add_spec_dir "$1"
+  write_spec "$1/$SP/list-font-size.md" "$(criterion Font-1)"
+  add_catalog_row "$1" Font list-font-size.md draft
+}
+setup_spec_duplicate_abbr() {
+  add_font_spec "$1" draft
+  write_spec "$1/$SP/list-font-color.md" "$(criterion FONT-3)"
+  add_catalog_row "$1" FONT list-font-color.md draft
+}
+setup_spec_duplicate_id() {
+  add_spec_dir "$1"
+  write_spec "$1/$SP/list-font-size.md" "$(criterion FONT-1)
+
+$(criterion FONT-1)"
+  add_catalog_row "$1" FONT list-font-size.md draft
+}
+setup_spec_id_abbr_mismatch() {
+  add_spec_dir "$1"
+  write_spec "$1/$SP/list-font-size.md" "$(criterion SIZE-1)"
+  add_catalog_row "$1" FONT list-font-size.md draft
+}
+setup_spec_missing_item() {
+  add_spec_dir "$1"
+  write_spec "$1/$SP/list-font-size.md" "$(criterion FONT-1 | grep -v '^- 操作:')"
+  add_catalog_row "$1" FONT list-font-size.md draft
+}
+setup_spec_no_criteria() {
+  add_spec_dir "$1"
+  write_spec "$1/$SP/list-font-size.md" "基準はまだ書いていない。"
+  add_catalog_row "$1" FONT list-font-size.md draft
+}
+setup_spec_criteria_only_in_code_block() {
+  add_spec_dir "$1"
+  write_spec "$1/$SP/list-font-size.md" "\`\`\`markdown
+$(criterion FONT-1)
+\`\`\`"
+  add_catalog_row "$1" FONT list-font-size.md draft
+}
+setup_plan_unknown_spec_id() {
+  add_font_spec "$1" approved
+  write_plan "$1/$A/$NEW.md" "### FONT-9 実在しない基準
+
+- 確かめ方: 自動テスト" "$PURPOSE_SPEC"
+}
+setup_plan_spec_id_without_dir() {
+  write_plan "$1/$A/$NEW.md" "$VERIFY_SPEC" "$PURPOSE_SPEC"
+}
+setup_plan_active_draft() {
+  add_font_spec "$1" draft
+  write_plan "$1/$A/$NEW.md" "$VERIFY_SPEC" "$PURPOSE_SPEC"
+}
+setup_plan_active_archived() {
+  add_font_spec "$1" archived
+  write_plan "$1/$A/$NEW.md" "$VERIFY_SPEC" "$PURPOSE_SPEC"
+}
+setup_plan_completed_draft() {
+  add_font_spec "$1" draft
+  write_plan "$1/$C/$NEW.md" "$VERIFY_SPEC" "$PURPOSE_SPEC"
+}
+setup_plan_no_purpose_path() {
+  add_font_spec "$1" approved
+  write_plan "$1/$A/$NEW.md" "$VERIFY_SPEC" "$PURPOSE_NONE"
+}
+setup_plan_purpose_not_in_catalog() {
+  add_font_spec "$1" approved
+  write_plan "$1/$A/$NEW.md" "$VERIFY_SPEC" "$PURPOSE_SPEC 関連: \`docs/product-specs/list-font-weight.md\`"
+}
+setup_plan_purpose_other_spec() {
+  add_font_spec "$1" approved
+  write_spec "$1/$SP/list-font-color.md" "$(criterion COLOR-1)"
+  add_catalog_row "$1" COLOR list-font-color.md approved
+  write_plan "$1/$A/$NEW.md" "$VERIFY_SPEC" '製品の仕様: `docs/product-specs/list-font-color.md`'
+}
+
+# --- 検査 10: レビューの後に足した場合 ---
+
+# 2 つの approved の仕様（FONT と COLOR）を置く
+add_two_specs() {
+  add_font_spec "$1" approved
+  write_spec "$1/$SP/list-font-color.md" "$(criterion COLOR-1)"
+  add_catalog_row "$1" COLOR list-font-color.md "$2"
+}
+VERIFY_TWO="$VERIFY_SPEC
+
+### COLOR-1 文字の色を切り替える
+
+- 確かめ方: 自動テスト"
+
+setup_plan_two_paths_joined() {
+  add_two_specs "$1" approved
+  write_plan "$1/$A/$NEW.md" "$VERIFY_TWO" '製品の仕様: docs/product-specs/list-font-size.md、docs/product-specs/list-font-color.md'
+}
+setup_plan_purpose_draft_spec() {
+  add_two_specs "$1" draft
+  write_plan "$1/$A/$NEW.md" "$VERIFY_SPEC" '製品の仕様: `docs/product-specs/list-font-size.md`、`docs/product-specs/list-font-color.md`'
+}
+setup_spec_heading_without_title() {
+  add_spec_dir "$1"
+  write_spec "$1/$SP/list-font-size.md" "$(criterion FONT-1 | sed '1s/^### FONT-1 .*$/### FONT-1/')"
+  add_catalog_row "$1" FONT list-font-size.md draft
+}
+# archived の仕様は、書式（必須の節、基準の項目）を変えた後の形に合わなくても通る。完了した計画はその識別子を引ける
+setup_spec_archived_old_format() {
+  add_spec_dir "$1"
+  write_spec "$1/$SP/list-font-size.md" "$(criterion FONT-1 | grep -v '^- 操作:')"
+  grep -vxF '## 利用者の操作の流れ' "$1/$SP/list-font-size.md" > "$1/$SP/tmp" && mv "$1/$SP/tmp" "$1/$SP/list-font-size.md"
+  add_catalog_row "$1" FONT list-font-size.md archived
+  write_plan "$1/$C/$NEW.md" "$VERIFY_SPEC" "$PURPOSE_SPEC"
+}
+setup_spec_bad_catalog_header() {
+  add_spec_dir "$1"
+  sed 's/^| 略号 | 仕様 | 題 | 状態 |$/| 略号 | 題 | 仕様 | 状態 |/' "$1/$SP/README.md" > "$1/$SP/tmp" && mv "$1/$SP/tmp" "$1/$SP/README.md"
+}
+setup_spec_bad_column_count() {
+  add_spec_dir "$1"
+  write_spec "$1/$SP/list-font-size.md" "$(criterion FONT-1)"
+  printf '| FONT | [list-font-size.md](list-font-size.md) | 文字の大きさ | 切り替え | draft |\n' >> "$1/$SP/README.md"
+}
+setup_spec_duplicate_catalog_row() {
+  add_font_spec "$1" draft
+  add_catalog_row "$1" SIZE list-font-size.md draft
+}
+setup_spec_link_not_direct() {
+  add_spec_dir "$1"
+  mkdir -p "$1/$SP/sub"
+  write_spec "$1/$SP/sub/list-font-size.md" "$(criterion FONT-1)"
+  add_catalog_row "$1" FONT sub/list-font-size.md draft
+}
+setup_spec_archived_open_question() {
+  add_spec_dir "$1"
+  write_spec "$1/$SP/list-font-size.md" "$(criterion FONT-1)" '- [NEEDS CLARIFICATION: 文字の大きさの段階は 2 つか 3 つか]'
+  add_catalog_row "$1" FONT list-font-size.md archived
+}
+setup_spec_duplicate_item() {
+  add_spec_dir "$1"
+  write_spec "$1/$SP/list-font-size.md" "$(criterion FONT-1 | awk '{ print } /^- 前提: / { print "- 前提: 二つ目の前提。" }')"
+  add_catalog_row "$1" FONT list-font-size.md draft
+}
+
+setup_spec_bad_file_name() {
+  add_spec_dir "$1"
+  write_spec "$1/$SP/List_Font.md" "$(criterion FONT-1)"
+  add_catalog_row "$1" FONT List_Font.md draft
+}
+
+run_case "仕様: 英小文字・数字・ハイフンでない仕様のファイル名" fail "仕様 $SP/List_Font.md: 仕様のファイル名が英小文字・数字・ハイフンではありません" setup_spec_bad_file_name
+run_case "仕様: 目的の節に読点でつないだ 2 つのパス" pass "" setup_plan_two_paths_joined
+run_case "仕様: archived の仕様は書式の変更の後も通る" pass "" setup_spec_archived_old_format
+run_case "仕様: 目的の節に書いた draft の仕様（識別子は引かない）" fail "進行中の計画 $A/$NEW.md が引く仕様 $SP/list-font-color.md の状態が「draft」です" setup_plan_purpose_draft_spec
+run_case "仕様: 題の無い基準の見出し" fail "基準 FONT-1 の見出しに題がありません" setup_spec_heading_without_title
+run_case "仕様: 目録の表の見出しの行の列の順序の誤り" fail "目録の表の見出しの行が「略号,題,仕様,状態」です（期待: 略号,仕様,題,状態）" setup_spec_bad_catalog_header
+run_case "仕様: 目録の行の列の数の誤り" fail "目録の行（略号 FONT）の列の数が 5 です" setup_spec_bad_column_count
+run_case "仕様: 同じ仕様を指す目録の行の重複" fail "目録に、仕様 $SP/list-font-size.md の行が 2 行以上あります" setup_spec_duplicate_catalog_row
+run_case "仕様: 目録のリンク先が直下の *.md でない" fail "目録の略号 FONT のリンク先 sub/list-font-size.md が、$SP の直下の仕様のファイルではありません" setup_spec_link_not_direct
+run_case "仕様: archived に未決の点が残る" fail "は archived なのに、未決の点" setup_spec_archived_open_question
+run_case "仕様: 基準の項目の重複" fail "基準 FONT-1 に「- 前提:」の行が 2 行あります（1 行にする）" setup_spec_duplicate_item
+
+run_case "仕様: 正しい仕様と目録" pass "" setup_spec_correct
+run_case "仕様: 目録が空（仕様が 0 件）" pass "" setup_spec_catalog_empty
+run_case "仕様: 置き場が無く、V<数字> だけの計画" pass "" setup_spec_no_dir_v_only
+run_case "仕様: approved の仕様を引く進行中の計画" pass "" setup_spec_active_approved
+run_case "仕様: approved の仕様を引く完了した計画" pass "" setup_spec_completed_approved
+run_case "仕様: archived の仕様を引く完了した計画" pass "" setup_spec_completed_archived
+run_case "仕様: draft に未決の点が残る" pass "" setup_spec_draft_open_question
+run_case "仕様: 旧い書式の計画は仕様と照合しない" pass "" setup_spec_old_plan_ignored
+
+run_case "仕様: 目録に無い仕様のファイル" fail "仕様 $SP/list-font-size.md が目録 $SP/README.md にありません" setup_spec_not_in_catalog
+run_case "仕様: 実在しない仕様を指す目録の行" fail "目録の略号 FONT のリンク先 $SP/list-font-size.md がありません" setup_spec_missing_file
+run_case "仕様: 状態の値の誤り" fail "状態「done」は、draft・approved・archived のどれでもありません" setup_spec_bad_status
+run_case "仕様: 仕様の中の状態の行" fail "に状態の行があります" setup_spec_status_line
+run_case "仕様: approved に未決の点が残る" fail "は approved なのに、未決の点" setup_spec_approved_open_question
+run_case "仕様: 必須の節の欠け" fail "必須の節の見出し「## 利用者の操作の流れ」の行がありません" setup_spec_missing_section
+run_case "仕様: 略号の形の誤り" fail "目録の略号 Font が、英大文字 2〜6 字ではありません" setup_spec_bad_abbr
+run_case "仕様: 略号の重複" fail "目録の略号 FONT が重複しています" setup_spec_duplicate_abbr
+run_case "仕様: 識別子の重複" fail "受け入れ基準の識別子 FONT-1 が重複しています（重複のある仕様: $SP/list-font-size.md）" setup_spec_duplicate_id
+run_case "仕様: 略号と合わない識別子" fail "基準の識別子 SIZE-1 が、この仕様の略号の形（FONT-<数字>）ではありません" setup_spec_id_abbr_mismatch
+run_case "仕様: 基準の項目の欠け" fail "基準 FONT-1 に「- 操作:」の行がありません" setup_spec_missing_item
+run_case "仕様: 基準が 0 件" fail "受け入れ基準の見出し（「## 受け入れ基準」の下の ### <識別子> <題>）が 1 つもありません" setup_spec_no_criteria
+run_case "仕様: コードブロックの中にだけある基準の見出し" fail "受け入れ基準の見出し（「## 受け入れ基準」の下の ### <識別子> <題>）が 1 つもありません" setup_spec_criteria_only_in_code_block
+run_case "仕様: 計画が実在しない仕様の識別子を引く" fail "の基準 FONT-9 が、どの製品の仕様の受け入れ基準にもありません" setup_plan_unknown_spec_id
+run_case "仕様: 置き場が無いのに V<数字> でない識別子を引く" fail "の基準 FONT-1 は V<数字> ではありませんが、製品の仕様の置き場 $SP がありません" setup_plan_spec_id_without_dir
+run_case "仕様: 進行中の計画が draft の仕様を引く" fail "の状態が「draft」です" setup_plan_active_draft
+run_case "仕様: 進行中の計画が archived の仕様を引く" fail "の状態が「archived」です" setup_plan_active_archived
+run_case "仕様: 完了した計画が draft の仕様を引く" fail "完了した計画 $C/$NEW.md が引く仕様 $SP/list-font-size.md の状態が「draft」です" setup_plan_completed_draft
+run_case "仕様: 目的の節に仕様のパスが無い" fail "目的の節に仕様のパスがありません" setup_plan_no_purpose_path
+run_case "仕様: 目的の節の仕様のパスが目録に無い" fail "目的の節の仕様 $SP/list-font-weight.md が、目録 $SP/README.md にありません" setup_plan_purpose_not_in_catalog
+run_case "仕様: 目的の節の仕様と識別子の所属先が違う" fail "の基準 FONT-1 は仕様 $SP/list-font-size.md の基準ですが、目的の節に書いた仕様にありません" setup_plan_purpose_other_spec
 
 total=$((passed + failed))
 if [ "$failed" -gt 0 ]; then

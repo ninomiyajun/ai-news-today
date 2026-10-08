@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 文書の検査。手元と CI で同じコマンドを使う: npm run check:docs
 #
-# 確かめること（ハーネスの導入の P4 までの範囲）:
+# 確かめること（ハーネスの導入の P5 までの範囲）:
 #   1. AGENTS.md に導入済みの印（「ハーネスの版: N」の 1 行）があり、その版で必須のファイルが実在する
 #   2. CLAUDE.md が「@AGENTS.md」の 1 行（末尾の改行を含む）と完全に一致する
 #   3. AGENTS.md の「文書の地図」に書いたパスが実在する
@@ -25,6 +25,25 @@
 #        基準ごとに、記録の中の「確かめた者: app-evaluator」の実行のうち、その基準の行を持つ最も後の実行の結果が「合格」。
 #        あわせて、検証の節の書式（check_plan_verification）と、記録の書式（check_record_format）を確かめる。
 #      - 計画と記録のどちらも、``` で囲んだコードブロックの中の行は数えない
+#  10. 製品の仕様（書式と目録の正本は docs/product-specs/README.md）。
+#      (1)〜(5) は docs/product-specs/ があるときだけ働く（利用者に見える機能を持つプロジェクトに置く、条件付きの種類のため）:
+#      (1) 目録（README.md の「## 目録」の表）から、略号・仕様のリンク先・状態を読む。表の見出しの行が「略号・仕様・題・状態」の
+#          4 列で、各行も 4 列。行が 0 行でもよい
+#      (2) 直下の *.md（README.md を除く）がすべて目録に 1 行ずつある／目録のリンク先が直下の *.md で実在する／同じ仕様を指す行が
+#          重ならない／略号が英大文字 2〜6 字で重複しない
+#      (3) 状態が draft・approved・archived のどれか／仕様のファイルに状態の行（「状態:」で始まる行）が無い／
+#          approved と archived の仕様に [NEEDS CLARIFICATION: が残っていない
+#      (4) 各仕様に、README.md の「必須の節」の一覧の見出しがすべて行としてある（検査 8 と同じ関数）
+#      (5) 「## 受け入れ基準」の「### <識別子> <題>」の識別子が「<略号>-<数字>」で、題があり、同じ仕様の中でも仕様をまたいでも
+#          重複しない。各見出しの下に「- 前提:」「- 操作:」「- 期待する結果:」が 1 行ずつある。基準が 1 つ以上ある
+#      archived の仕様は、(4) と (5) の書式（必須の節、題、識別子の形、項目の行、基準の数）を調べず、識別子だけを集める
+#      （書式を後から変えても、過去の仕様を失敗にしないため）
+#      (6)(7) は、仕様の置き場が無くても、新しい書式の計画（active/ と completed/）に対して常に働く:
+#      (6) 検証の節の識別子のうち V<数字> でないものが、どれかの仕様の受け入れ基準として実在する。目的の節に書いた仕様と、
+#          識別子の所属先の仕様の状態は、active/ の計画では approved、completed/ の計画では approved か archived
+#      (7) 目的の節に書いた仕様のパス（docs/product-specs/<名前>.md。名前は英小文字・数字・ハイフン）が目録にあり、検証の節の仕様の識別子の所属先が、
+#          目的の節に書いた仕様のどれかと一致する
+#      仕様と計画のどちらも、``` で囲んだコードブロックの中の行は数えない
 # 失敗したときは、項目ごとに直し方を表示して、終了コード 1 で終わる。
 set -euo pipefail
 export LC_ALL=C
@@ -128,8 +147,9 @@ fi
 
 # 4. Markdown の相対リンク（対応する構文は冒頭の説明のとおり）。一覧は git から NUL 区切りで得る
 #    （日本語の名前を引用符付きの形にしないため）。node_modules などの除外は .gitignore に従う。
-md_list="$(mktemp)"
-trap 'rm -f "$md_list"' EXIT
+work_dir="$(mktemp -d)"
+trap 'rm -rf "$work_dir"' EXIT
+md_list="$work_dir/md-list"
 git -c core.quotePath=false ls-files -z --cached --others --exclude-standard -- '*.md' > "$md_list"
 while IFS= read -r -d '' md; do
   if [ -L "$md" ]; then
@@ -193,11 +213,52 @@ $(grep -oE '`[^`]+`' ARCHITECTURE.md | tr -d '`' | grep -E '^(src|docs|scripts|\
 EOF
 fi
 
-# 8. 計画の必須の節。見出しの一覧は docs/PLANS.md の「## 必須の節」から読み取る（一覧を 2 か所に持たないため）。
-#    読み取るのは「1. `## 目的`: 説明」の形の行の、バッククォートで囲んだ部分だけ
+# --- 検査 8〜10 で共有する読み取り ---
+
+# ``` で始まる行ごとに、コードブロックの中と外を切り替え、外の行だけを出す
+outside_code_blocks() {
+  awk '/^```/{inside=!inside; next} !inside' "$1"
+}
+
+# 書式の文書（docs/PLANS.md、docs/product-specs/README.md）の「## 必須の節」から、必須の見出しを 1 行ずつ出す。
+# 読み取るのは「1. `## 目的`: 説明」の形の行の、バッククォートで囲んだ部分だけ
+required_headings_of() {
+  awk '/^## 必須の節$/{on=1; next} /^## /{on=0} on' "$1" | sed -n 's/^[0-9][0-9]*\. `\(## [^`]*\)`.*$/\1/p'
+}
+
+# $1 のファイルに、$2（1 行に 1 つの見出し）のうち行として無い見出しを 1 行ずつ出す。コードブロックの中の行は数えない
+missing_headings_in() {
+  local body heading
+  body="$(outside_code_blocks "$1")"
+  while IFS= read -r heading; do
+    [ -z "$heading" ] && continue
+    grep -qxF -- "$heading" <<<"$body" || printf '%s\n' "$heading"
+  done <<EOF
+$2
+EOF
+}
+
+# 計画 $1 が新しい書式の計画か（ファイル名の日付が「新しい書式の適用開始」以降か、日付で始まらない名前）。
+# 適用開始の日付（format_start）を読めていないときは、どの計画も新しい書式とみなさない
+is_new_format_plan() {
+  local name date
+  [ -n "${format_start:-}" ] || return 1
+  name="$(basename "$1" .md)"
+  date="$(printf '%s\n' "$name" | sed -n 's/^\([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\)-.*$/\1/p')"
+  if [ -n "$date" ] && [[ "$date" < "$format_start" ]]; then
+    return 1
+  fi
+  return 0
+}
+
+format_start=""
 if [ -f docs/PLANS.md ]; then
-  plan_headings="$(awk '/^## 必須の節$/{on=1; next} /^## /{on=0} on' docs/PLANS.md \
-    | sed -n 's/^[0-9][0-9]*\. `\(## [^`]*\)`.*$/\1/p')"
+  format_start="$(sed -n 's/^新しい書式の適用開始: \([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\)$/\1/p' docs/PLANS.md | head -n 1)"
+fi
+
+# 8. 計画の必須の節。見出しの一覧は docs/PLANS.md の「## 必須の節」から読み取る（一覧を 2 か所に持たないため）
+if [ -f docs/PLANS.md ]; then
+  plan_headings="$(required_headings_of docs/PLANS.md)"
   if [ -z "$plan_headings" ]; then
     fail "docs/PLANS.md の「## 必須の節」から、計画の必須の見出しを読み取れません" \
       '「## 必須の節」の節に、「1. `## 目的`: 説明」の形で、見出しを 1 行ずつ書く'
@@ -215,14 +276,12 @@ if [ -f docs/PLANS.md ]; then
         fail "計画 $plan に CR（\\r）が含まれています" "改行を LF にしてください（CR があると見出しの行が一致しないため）"
         continue
       fi
-      # ``` で始まる行ごとに、コードブロックの中と外を切り替え、外の行だけを照合に使う
-      plan_lines="$(awk '/^```/{inside=!inside; next} !inside' "$plan")"
       while IFS= read -r heading; do
         [ -z "$heading" ] && continue
-        grep -qxF -- "$heading" <<<"$plan_lines" || fail "計画 $plan に、必須の節の見出し「$heading」の行がありません" \
+        fail "計画 $plan に、必須の節の見出し「$heading」の行がありません" \
           "$plan に「$heading」の行を足す（前後に文字を足さない）。書くことがまだ無い節も、見出しは置く（docs/PLANS.md の「必須の節」）"
       done <<EOF
-$plan_headings
+$(missing_headings_in "$plan" "$plan_headings")
 EOF
     done
   fi
@@ -230,14 +289,10 @@ fi
 
 # 9. 受け入れ確認の記録（書式の正本は docs/PLANS.md の「検証の節の書式」と「受け入れ確認の記録」）
 
-# ``` で始まる行ごとに、コードブロックの中と外を切り替え、外の行だけを出す
-outside_code_blocks() {
-  awk '/^```/{inside=!inside; next} !inside' "$1"
-}
-
-# 新しい書式の計画の検証の節を調べる。出力は 1 行ずつ、次のどちらかの形:
+# 新しい書式の計画の検証の節を調べる。出力は 1 行ずつ、次のどれかの形:
 #   ERR<TAB><問題の説明>   書式の崩れ（下の各項目）
-#   ACC<TAB><識別子>       確かめ方が受け入れ確認の基準
+#   ID<TAB><識別子>        検証の節の基準の識別子のすべて（確かめ方を問わない。検査 10 が使う）
+#   ACC<TAB><識別子>       確かめ方が受け入れ確認の基準（検査 9 が使う）
 # 確かめること: 閉じていないコードブロックが無い／「### <識別子> <題>」の識別子が重複しない／各見出しの下に
 # 「- 確かめ方: <値>」の行がちょうど 1 つあり、値が「自動テスト」「受け入れ確認」「人が確認」のどれか／どの見出しの下にも
 # 無い確かめ方の行が無い／「確かめ方」の語に「:」か「：」が続くのに、正しい形（行の頭が「- 確かめ方: 」）でない行が無い／
@@ -261,6 +316,7 @@ check_plan_verification() {
       id = $2
       if (id == "") { print "ERR\t識別子の無い基準の見出しがあります: " $0; next }
       if (id in seen) print "ERR\t基準の識別子 " id " が重複しています"
+      else print "ID\t" id
       seen[id] = 1
       next
     }
@@ -379,9 +435,7 @@ latest_results_of() {
   '
 }
 
-format_start=""
 if [ -f docs/PLANS.md ]; then
-  format_start="$(sed -n 's/^新しい書式の適用開始: \([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\)$/\1/p' docs/PLANS.md | head -n 1)"
   if [ -z "$format_start" ]; then
     fail "docs/PLANS.md に「新しい書式の適用開始: YYYY-MM-DD」の行がありません" \
       "docs/PLANS.md の「検証の節の書式」に、新しい書式を適用し始めた日付をその形の 1 行で戻す（受け入れ確認の記録を検査する計画を決めるため）"
@@ -429,10 +483,7 @@ if [ -n "$format_start" ]; then
     { [ -f "$plan" ] && [ ! -L "$plan" ]; } || continue
     grep -q "$(printf '\r')" "$plan" && continue
     plan_name="$(basename "$plan" .md)"
-    plan_date="$(printf '%s\n' "$plan_name" | sed -n 's/^\([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\)-.*$/\1/p')"
-    if [ -n "$plan_date" ] && [[ "$plan_date" < "$format_start" ]]; then
-      continue
-    fi
+    is_new_format_plan "$plan" || continue
     verification="$(check_plan_verification "$plan")"
     while IFS= read -r problem; do
       [ -z "$problem" ] && continue
@@ -476,6 +527,316 @@ $criteria
 EOF
   done
 fi
+
+# 10. 製品の仕様（書式と目録の正本は docs/product-specs/README.md）
+SPEC_DIR="docs/product-specs"
+SPEC_INDEX="$SPEC_DIR/README.md"
+SPEC_FIX="docs/product-specs/README.md の書式に合わせて直す"
+ABBR_RE='^[A-Z]{2,6}$'
+SPEC_NAME_RE='^[a-z0-9][a-z0-9-]*\.md$'
+PLAN_ID_RE='^V[0-9]+$'
+catalog="$work_dir/spec-catalog.tsv"   # 略号<TAB>仕様のパス（読めなければ -）<TAB>状態
+spec_ids="$work_dir/spec-ids.tsv"      # 識別子<TAB>仕様のパス
+: > "$catalog"
+: > "$spec_ids"
+spec_dir_present=0
+
+# 目録の表の見出しの行（列の名前と順序）。docs/product-specs/README.md の「check-docs.sh が直接読む書式」と組
+CATALOG_HEADER="略号,仕様,題,状態"
+
+# 目録（「## 目録」の節の表）を読み、1 行ずつ次の形で出す（値が空の欄は「-」にする。read で空の欄が詰まらないように）:
+#   HEAD<TAB><列の名前をカンマでつないだもの>         表の 1 行目（見出しの行）
+#   ROW<TAB><略号><TAB><リンク先><TAB><状態><TAB><列の数>  3 行目以降（2 行目の区切りの行は読まない）
+read_spec_catalog() {
+  outside_code_blocks "$1" | awk '
+    function v(s) { return (s == "") ? "-" : s }
+    /^## / { on = ($0 == "## 目録"); next }
+    !on { next }
+    /^[[:space:]]*\|/ {
+      line = $0
+      sub(/^[[:space:]]*\|/, "", line); sub(/\|[[:space:]]*$/, "", line)
+      n = split(line, col, "|")
+      for (i = 1; i <= n; i++) { gsub(/^[[:space:]]+/, "", col[i]); gsub(/[[:space:]]+$/, "", col[i]) }
+      rows++
+      if (rows == 1) {
+        h = col[1]; for (i = 2; i <= n; i++) h = h "," col[i]
+        print "HEAD\t" v(h); next
+      }
+      if (rows == 2 && col[1] ~ /^:?-+:?$/) next
+      target = ""
+      if (match(col[2], /\]\([^)]*\)/)) target = substr(col[2], RSTART + 2, RLENGTH - 3)
+      print "ROW\t" v(col[1]) "\t" v(target) "\t" v(col[4]) "\t" n
+    }
+  '
+}
+
+# 仕様 $1 の「## 受け入れ基準」の節を調べる。$2 は目録の略号（分からなければ空）。出力は 1 行ずつ:
+#   ERR<TAB><問題の説明>
+#   ID<TAB><識別子>
+check_spec_criteria() {
+  awk -v abbr="$2" '
+    BEGIN { item[1] = "- 前提:"; item[2] = "- 操作:"; item[3] = "- 期待する結果:" }
+    function end_heading(   k) {
+      if (id != "") {
+        for (k = 1; k <= 3; k++) {
+          if (cnt[k] == 0) print "ERR\t基準 " id " に「" item[k] "」の行がありません"
+          else if (cnt[k] > 1) print "ERR\t基準 " id " に「" item[k] "」の行が " cnt[k] " 行あります（1 行にする）"
+        }
+      }
+      id = ""; split("", cnt)
+    }
+    /^```/ { inside = !inside; next }
+    inside { next }
+    /^## / { if (insec) end_heading(); insec = ($0 == "## 受け入れ基準"); next }
+    !insec { next }
+    /^###([[:space:]].*)?$/ {
+      end_heading()
+      nheadings++
+      id = $2
+      if (id == "") { print "ERR\t識別子の無い基準の見出しがあります: " $0; id = "（識別子の無い見出し）"; next }
+      if ($0 !~ /^###[[:space:]]+[^[:space:]]+[[:space:]]+[^[:space:]]/) {
+        print "ERR\t基準 " id " の見出しに題がありません（「### <識別子> <題>」の形にする）"
+      }
+      if (abbr != "") {
+        if (id !~ ("^" abbr "-[0-9]+$")) print "ERR\t基準の識別子 " id " が、この仕様の略号の形（" abbr "-<数字>）ではありません"
+      } else if (id !~ /^[A-Z]+-[0-9]+$/) {
+        print "ERR\t基準の識別子 " id " が「<略号>-<数字>」の形ではありません"
+      }
+      print "ID\t" id
+      next
+    }
+    {
+      for (k = 1; k <= 3; k++) if (index($0, item[k]) == 1) { if (id != "") cnt[k]++; break }
+    }
+    END {
+      if (insec) end_heading()
+      if (nheadings == 0) print "ERR\t受け入れ基準の見出し（「## 受け入れ基準」の下の ### <識別子> <題>）が 1 つもありません"
+    }
+  ' "$1"
+}
+
+if [ -e "$SPEC_DIR" ] || [ -L "$SPEC_DIR" ]; then
+  spec_dir_present=1
+  if [ -L "$SPEC_DIR" ] || [ ! -d "$SPEC_DIR" ]; then
+    fail "$SPEC_DIR がディレクトリではありません" "$SPEC_DIR を、実体のディレクトリとして置く"
+  elif [ -L "$SPEC_INDEX" ] || [ ! -f "$SPEC_INDEX" ]; then
+    fail "$SPEC_DIR があるのに、書式と目録の文書 $SPEC_INDEX がありません" \
+      "$SPEC_INDEX を実体のファイルとして置く（仕様の書式と目録の正本。仕様を置かないなら $SPEC_DIR ごと消す）"
+  else
+    spec_headings="$(required_headings_of "$SPEC_INDEX")"
+    if [ -z "$spec_headings" ]; then
+      fail "$SPEC_INDEX の「## 必須の節」から、仕様の必須の見出しを読み取れません" \
+        '「## 必須の節」の節に、「1. `## 目的`: 説明」の形で、見出しを 1 行ずつ書く'
+    fi
+
+    # (1)(2)(3) 目録の行
+    catalog_header=""
+    while IFS="$(printf '\t')" read -r kind abbr target status ncol; do
+      [ -z "$kind" ] && continue
+      if [ "$kind" = HEAD ]; then
+        catalog_header="$abbr"
+        continue
+      fi
+      if [ "$ncol" != 4 ]; then
+        fail "$SPEC_INDEX の目録の行（略号 $abbr）の列の数が $ncol です" \
+          "目録の行を「| 略号 | [名前.md](名前.md) | 題 | 状態 |」の 4 列にする（題に「|」を使わない）"
+      fi
+      [[ "$abbr" =~ $ABBR_RE ]] || fail "$SPEC_INDEX の目録の略号 $abbr が、英大文字 2〜6 字ではありません" \
+        "略号を英大文字 2〜6 字にする（受け入れ基準の識別子 <略号>-<数字> と計画の V<数字> を区別するため）"
+      path="-"
+      if [ "$target" = "-" ]; then
+        fail "$SPEC_INDEX の目録の略号 $abbr の行に、仕様へのリンクがありません" \
+          "仕様の欄を [名前.md](名前.md) のインラインのリンクにする"
+      elif [[ "$target" == */* ]] || [[ "$target" != *.md ]] || [ "$target" = "README.md" ]; then
+        fail "$SPEC_INDEX の目録の略号 $abbr のリンク先 $target が、$SPEC_DIR の直下の仕様のファイルではありません" \
+          "仕様は $SPEC_DIR の直下に <名前>.md で置き、リンク先はファイル名だけにする"
+      else
+        path="$SPEC_DIR/$target"
+        [[ "$target" =~ $SPEC_NAME_RE ]] || fail "$SPEC_INDEX の目録の略号 $abbr のリンク先 $target: 仕様のファイル名が英小文字・数字・ハイフンではありません" \
+          "仕様のファイル名を英小文字・数字・ハイフンだけにし（英小文字か数字で始める）、目録のリンク先も合わせる"
+        if [ ! -f "$path" ]; then
+          fail "$SPEC_INDEX の目録の略号 $abbr のリンク先 $path がありません" \
+            "目録の行を実在する仕様に直すか、仕様のファイルを置く"
+          path="-"
+        fi
+      fi
+      case "$status" in
+        draft|approved|archived) ;;
+        *) fail "$SPEC_INDEX の目録の略号 $abbr の状態「$status」は、draft・approved・archived のどれでもありません" \
+             "状態の欄を draft・approved・archived のどれか 1 語にする" ;;
+      esac
+      printf '%s\t%s\t%s\n' "$abbr" "$path" "$status" >> "$catalog"
+    done <<EOF
+$(read_spec_catalog "$SPEC_INDEX")
+EOF
+    if [ -z "$catalog_header" ]; then
+      fail "$SPEC_INDEX の「## 目録」の節に、目録の表がありません" \
+        "「## 目録」の節に、見出しの行が「| 略号 | 仕様 | 題 | 状態 |」の表を置く（行が 0 行でもよい）"
+    elif [ "$catalog_header" != "$CATALOG_HEADER" ]; then
+      fail "$SPEC_INDEX の目録の表の見出しの行が「$catalog_header」です（期待: $CATALOG_HEADER）" \
+        "目録の表の見出しの行を「| 略号 | 仕様 | 題 | 状態 |」に戻す。列を変えるときは scripts/harness/check-docs.sh も直す"
+    fi
+    while IFS= read -r dup; do
+      [ -z "$dup" ] && continue
+      fail "$SPEC_INDEX の目録の略号 $dup が重複しています" "略号を仕様ごとに別のものにする"
+    done <<EOF
+$(cut -f1 "$catalog" | sort | uniq -d)
+EOF
+    while IFS= read -r dup; do
+      [ -z "$dup" ] && continue
+      fail "$SPEC_INDEX の目録に、仕様 $dup の行が 2 行以上あります" "仕様 1 つにつき目録の行を 1 行にする"
+    done <<EOF
+$(cut -f2 "$catalog" | grep -vxF -- '-' | sort | uniq -d || true)
+EOF
+
+    # (2)〜(5) 仕様のファイルごと
+    for spec in "$SPEC_DIR"/*.md; do
+      [ -e "$spec" ] || [ -L "$spec" ] || continue
+      [ "$spec" = "$SPEC_INDEX" ] && continue
+      if [ -L "$spec" ] || [ ! -f "$spec" ]; then
+        fail "仕様 $spec を検査できません（シンボリックリンクか、通常のファイルではありません）" "$spec を、実体のファイルとして置く"
+        continue
+      fi
+      if grep -q "$(printf '\r')" "$spec"; then
+        fail "仕様 $spec に CR（\\r）が含まれています" "改行を LF にしてください（CR があると見出しの行が一致しないため）"
+        continue
+      fi
+      [[ "$(basename "$spec")" =~ $SPEC_NAME_RE ]] || fail "仕様 $spec: 仕様のファイル名が英小文字・数字・ハイフンではありません" \
+        "仕様のファイル名を英小文字・数字・ハイフンだけにし（英小文字か数字で始める）、目録のリンク先も合わせる（計画の目的の節のパスを拾う形と合わせるため）"
+      abbr=""
+      status=""
+      row="$(awk -F '\t' -v p="$spec" '$2 == p { print; exit }' "$catalog")"
+      if [ -z "$row" ]; then
+        fail "仕様 $spec が目録 $SPEC_INDEX にありません" \
+          "$SPEC_INDEX の「## 目録」の表に、略号・[名前.md](名前.md)・題・状態（新しい仕様は draft）の行を足す"
+      else
+        abbr="$(printf '%s\n' "$row" | cut -f1)"
+        status="$(printf '%s\n' "$row" | cut -f3)"
+        [[ "$abbr" =~ $ABBR_RE ]] || abbr=""
+      fi
+      spec_body="$(outside_code_blocks "$spec")"
+      if grep -qE '^(- )?状態[:：]' <<<"$spec_body"; then
+        fail "仕様 $spec に状態の行があります" \
+          "状態の行を消す。状態は $SPEC_INDEX の目録の「状態」の列だけに持つ（2 か所に持つと食い違うため）"
+      fi
+      case "$status" in
+        approved|archived)
+          if grep -qF '[NEEDS CLARIFICATION:' <<<"$spec_body"; then
+            fail "仕様 $spec は $status なのに、未決の点（[NEEDS CLARIFICATION:）が残っています" \
+              "未決の点を利用者に尋ねて仕様に反映し、承認をやり直すまで目録の状態を draft に戻す"
+          fi
+          ;;
+      esac
+      criteria="$(check_spec_criteria "$spec" "$abbr")"
+      # archived の仕様は、必須の節と基準の項目の書式を調べない（書式を後から変えても、過去の仕様を失敗にしないため）。
+      # 識別子は集める（完了した計画が引く識別子の実在と、識別子の使い回しを確かめるため）
+      if [ "$status" != archived ]; then
+        if [ -n "${spec_headings:-}" ]; then
+          while IFS= read -r heading; do
+            [ -z "$heading" ] && continue
+            fail "仕様 $spec に、必須の節の見出し「$heading」の行がありません" \
+              "$spec に「$heading」の行を足す（前後に文字を足さない）。書くことがまだ無い節も、見出しは置く（$SPEC_INDEX の「必須の節」）"
+          done <<EOF
+$(missing_headings_in "$spec" "$spec_headings")
+EOF
+        fi
+        while IFS= read -r problem; do
+          [ -z "$problem" ] && continue
+          fail "仕様 $spec の受け入れ基準: $problem" "$SPEC_FIX（基準ごとに「### <略号>-<数字> <題>」と、前提・操作・期待する結果の行を 1 行ずつ）"
+        done <<EOF
+$(printf '%s\n' "$criteria" | sed -n 's/^ERR	//p')
+EOF
+      fi
+      printf '%s\n' "$criteria" | sed -n 's/^ID	//p' | awk -v p="$spec" '{ print $0 "\t" p }' >> "$spec_ids"
+    done
+    while IFS= read -r dup; do
+      [ -z "$dup" ] && continue
+      fail "受け入れ基準の識別子 $dup が重複しています（重複のある仕様: $(awk -F '\t' -v k="$dup" '$1 == k { print $2 }' "$spec_ids" | sort -u | tr '\n' ' ' | sed 's/ $//')）" \
+        "識別子は、仕様の略号で始め、同じ仕様の中でも仕様をまたいでも重ねない。いちど振った識別子は使い回さない"
+    done <<EOF
+$(cut -f1 "$spec_ids" | sort | uniq -d)
+EOF
+  fi
+fi
+
+# 計画 $1 が引く仕様 $2 の状態を目録で調べる。進行中の計画は approved だけ、完了した計画は approved か archived を引ける
+check_plan_spec_status() {
+  local plan="$1" spec="$2" status
+  status="$(awk -F '\t' -v p="$spec" '$2 == p { print $3; exit }' "$catalog")"
+  case "$plan" in
+    docs/exec-plans/active/*)
+      [ "$status" = approved ] || fail "進行中の計画 $plan が引く仕様 $spec の状態が「${status:-目録に無い}」です" \
+        "進行中の計画は approved の仕様だけを引ける。利用者の承認を得て仕様を approved にしてから計画を書く（承認の前に計画を書かない）"
+      ;;
+    *)
+      case "$status" in
+        approved|archived) ;;
+        *) fail "完了した計画 $plan が引く仕様 $spec の状態が「${status:-目録に無い}」です" \
+             "完了した計画は approved か archived の仕様だけを引ける。仕様の状態を目録で確かめ、承認の経緯を確かめる" ;;
+      esac
+      ;;
+  esac
+}
+
+# (6)(7) 新しい書式の計画が引く仕様（目的の節に書いた仕様と、検証の節の識別子の所属先）
+for plan in docs/exec-plans/active/*.md docs/exec-plans/completed/*.md; do
+  case "$plan" in *.acceptance.md) continue ;; esac
+  # 読めない計画と CR を含む計画は、検査 8 が失敗にしている
+  { [ -f "$plan" ] && [ ! -L "$plan" ]; } || continue
+  grep -q "$(printf '\r')" "$plan" && continue
+  is_new_format_plan "$plan" || continue
+  # 仕様の名前は英小文字・数字・ハイフン（docs/product-specs/README.md の「置き場と名前」）なので、その文字だけを拾う。
+  # 読点などでつないだ 2 つのパスが 1 つにつながらないようにするため
+  purpose_specs="$(outside_code_blocks "$plan" | awk '/^## /{ on = ($0 == "## 目的"); next } on' \
+    | { grep -oE 'docs/product-specs/[a-z0-9][a-z0-9-]*\.md' || true; } | sort -u)"
+  status_checked=""
+  while IFS= read -r p; do
+    [ -z "$p" ] && continue
+    if awk -F '\t' -v p="$p" '$2 == p { found = 1 } END { exit !found }' "$catalog"; then
+      check_plan_spec_status "$plan" "$p"
+      status_checked="$status_checked
+$p"
+    else
+      fail "計画 $plan の目的の節の仕様 $p が、目録 $SPEC_INDEX にありません" \
+        "目的の節の仕様のパスを、目録の行のリンク先の仕様（docs/product-specs/<名前>.md の形）に直す"
+    fi
+  done <<EOF
+$purpose_specs
+EOF
+  no_purpose_reported=0
+  while IFS= read -r id; do
+    [ -z "$id" ] && continue
+    [[ "$id" =~ $PLAN_ID_RE ]] && continue
+    if [ "$spec_dir_present" -eq 0 ]; then
+      fail "計画 $plan の基準 $id は V<数字> ではありませんが、製品の仕様の置き場 $SPEC_DIR がありません" \
+        "計画の中で振る基準は V<数字> にする。製品の仕様の基準を引くなら、先に仕様を書いて承認を得る（docs/PLANS.md の「検証の節の書式」）"
+      continue
+    fi
+    owner="$(awk -F '\t' -v k="$id" '$1 == k { print $2; exit }' "$spec_ids")"
+    if [ -z "$owner" ]; then
+      fail "計画 $plan の基準 $id が、どの製品の仕様の受け入れ基準にもありません" \
+        "識別子を仕様の受け入れ基準の識別子に合わせるか、計画の中で振る基準なら V<数字> にする"
+      continue
+    fi
+    if ! grep -qxF -- "$owner" <<<"$status_checked"; then
+      check_plan_spec_status "$plan" "$owner"
+      status_checked="$status_checked
+$owner"
+    fi
+    if [ -z "$purpose_specs" ]; then
+      if [ "$no_purpose_reported" -eq 0 ]; then
+        fail "計画 $plan は製品の仕様の基準（$id など）を引くのに、目的の節に仕様のパスがありません" \
+          "目的の節に、引く仕様のパスを docs/product-specs/<名前>.md の形で書く"
+        no_purpose_reported=1
+      fi
+    elif ! grep -qxF -- "$owner" <<<"$purpose_specs"; then
+      fail "計画 $plan の基準 $id は仕様 $owner の基準ですが、目的の節に書いた仕様にありません" \
+        "目的の節に $owner を書くか、検証の節の識別子を目的の節に書いた仕様の基準に直す"
+    fi
+  done <<EOF
+$(check_plan_verification "$plan" | sed -n 's/^ID	//p')
+EOF
+done
 
 if [ "$errors" -gt 0 ]; then
   echo "check-docs: $errors 件の問題があります" >&2
