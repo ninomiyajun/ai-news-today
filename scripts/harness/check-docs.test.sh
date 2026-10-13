@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check-docs.sh の試験（検査 8、検査 9: 受け入れ確認の記録、検査 10: 製品の仕様）。手元と CI で同じコマンドを使う:
+# check-docs.sh の試験（検査 7 の一部、検査 8、検査 9: 受け入れ確認の記録、検査 10: 製品の仕様、検査 11: 古い計画）。手元と CI で同じコマンドを使う:
 # npm run test:harness
 #
 # 場合ごとに、一時ディレクトリに小さなリポジトリ（git init だけ。コミットはしない）を作り、check-docs.sh の写しと
@@ -7,6 +7,9 @@
 # 組を変えて動かす。終了コードと、失敗のときは理由の文言を確かめる。
 # 計画・記録・仕様の見本はこのファイルの中で作り、リポジトリに Markdown の見本を置かない（検査 4、8、10 が見本を拾うため）。
 # 仕様の見本の題材は、アプリの実際の機能と関係の無い架空の機能（一覧の文字の大きさの切り替え）にする。
+#
+# 検査は、どの場合でも、基準の日（check-docs.sh の HARNESS_TODAY）を決まった日にして呼ぶ（run_case の 1 か所）。検査 11 が
+# 基準の日を見るので、渡さないと、試験を実行した日によって結果が変わるためである。基準の日を付けない呼び出しを足さない。
 set -euo pipefail
 export LC_ALL=C
 
@@ -26,6 +29,11 @@ if [ -z "$START" ]; then
 fi
 NEW="$START-score-filter"   # 新しい書式の計画の名前（適用開始の当日）
 OLD="2000-01-01-old-plan"   # 旧い書式の計画の名前
+
+# 検査に渡す基準の日の既定（適用開始の日）。環境変数 HARNESS_TEST_TODAY（YYYY-MM-DD）は、この既定を別の日に替える上書きで、
+# 検査 11 の場合を除く結果が基準の日に左右されないことを確かめるときに使う（検査 11 の場合は、自分で基準の日を指定する）
+BASE_TODAY="${HARNESS_TEST_TODAY:-$START}"
+CASE_TODAY=""   # 場合ごとの基準の日（run_case_on が指定する。空なら BASE_TODAY）
 
 passed=0
 failed=0
@@ -54,9 +62,11 @@ required_headings() {
   awk '/^## 必須の節$/{on=1; next} /^## /{on=0} on' "$1" | sed -n 's/^[0-9][0-9]*\. `\(## [^`]*\)`.*$/\1/p'
 }
 
-# 計画を書く。$1 = パス、$2 = 検証の節の本文、$3 = 目的の節の本文（省略可）。必須の節の見出しは本物の docs/PLANS.md から読む
+# 計画を書く。$1 = パス、$2 = 検証の節の本文、$3 = 目的の節の本文（省略可）、$4 = 進捗の節の本文（省略時は、基準の日の
+# 既定の日付の 1 行。検査 11 の対象でない場合の進行中の計画が、基準の日の既定を替えても古い計画にならないようにするため。
+# 空の文字列を渡すと、進捗の節を空にする）。必須の節の見出しは本物の docs/PLANS.md から読む
 write_plan() {
-  local path="$1" verification="$2" purpose="${3:-}" heading
+  local path="$1" verification="$2" purpose="${3:-}" progress="${4-- $BASE_TODAY: 試験の進捗。}" heading
   {
     printf '# 試験の計画\n\n'
     required_headings "$PLANS" | while IFS= read -r heading; do
@@ -65,6 +75,8 @@ write_plan() {
         printf '%s\n\n' "$verification"
       elif [ "$heading" = "## 目的" ] && [ -n "$purpose" ]; then
         printf '%s\n\n' "$purpose"
+      elif [ "$heading" = "## 進捗" ] && [ -n "$progress" ]; then
+        printf '%s\n\n' "$progress"
       fi
     done
   } > "$path"
@@ -109,14 +121,15 @@ record_without_line() {
   run_block 1 app-evaluator V1=合格 V2=合格 | awk -v prefix="$2" '!done && index($0, prefix) == 1 { done = 1; next } { print }' > "$1"
 }
 
-# 場合を 1 つ動かす。$1 = 名前、$2 = 期待（pass / fail）、$3 = 失敗のときに出力に含まれるべき文言、$4 = 準備の関数
+# 場合を 1 つ動かす。$1 = 名前、$2 = 期待（pass / fail）、$3 = 失敗のときに出力に含まれるべき文言、$4 = 準備の関数。
+# 検査には、基準の日として CASE_TODAY（空なら BASE_TODAY）を渡す
 run_case() {
   local name="$1" expect="$2" want="$3" setup="$4" d out rc
   d="$TMP_ROOT/case-$((passed + failed + 1))"
   make_base "$d"
   "$setup" "$d"
   set +e
-  out="$(bash "$d/scripts/harness/check-docs.sh" 2>&1)"
+  out="$(HARNESS_TODAY="${CASE_TODAY:-$BASE_TODAY}" bash "$d/scripts/harness/check-docs.sh" 2>&1)"
   rc=$?
   set -e
   if [ "$expect" = pass ] && [ "$rc" -eq 0 ]; then
@@ -130,6 +143,14 @@ run_case() {
     printf '%s\n' "$out" | sed 's/^/    /' >&2
     failed=$((failed + 1))
   fi
+}
+
+# 基準の日を指定して、場合を 1 つ動かす。$1 = 基準の日（YYYY-MM-DD）、$2 以降 = run_case の引数
+run_case_on() {
+  CASE_TODAY="$1"
+  shift
+  run_case "$@"
+  CASE_TODAY=""
 }
 
 C="docs/exec-plans/completed"
@@ -742,6 +763,116 @@ run_case "仕様: 完了した計画が draft の仕様を引く" fail "完了�
 run_case "仕様: 目的の節に仕様のパスが無い" fail "目的の節に仕様のパスがありません" setup_plan_no_purpose_path
 run_case "仕様: 目的の節の仕様のパスが目録に無い" fail "目的の節の仕様 $SP/list-font-weight.md が、目録 $SP/README.md にありません" setup_plan_purpose_not_in_catalog
 run_case "仕様: 目的の節の仕様と識別子の所属先が違う" fail "の基準 FONT-1 は仕様 $SP/list-font-size.md の基準ですが、目的の節に書いた仕様にありません" setup_plan_purpose_other_spec
+
+# --- 検査 11: 古い計画 ---
+
+# 基準の日と、そこから数えた日付。日数の計算を試験の側に持たないように、決まった値で書く。
+# check-docs.sh の STALE_PLAN_DAYS が 30 の前提。変えたらここも直す。
+# HARNESS_TEST_TODAY で基準の日の既定を替えても、ここの場合は自分の基準の日を使う
+T11="2026-12-31"   # 基準の日
+D10="2026-12-21"   # 10 日前
+D29="2026-12-02"   # 29 日前
+D30="2026-12-01"   # 30 日前
+D45="2026-11-16"   # 45 日前
+D60="2026-11-01"   # 60 日前
+NEXT1="2027-01-01"  # 1 日後
+NEXT2="2027-01-02"  # 2 日後
+LATER="2027-02-01"  # 1 日後より後
+
+# 検査 11 の場合の計画を書く。$1 = パス、$2 = 進捗の節の本文（空なら、進捗の節に日付を書かない）、$3 = 目的の節の本文（省略可）
+write_dated_plan() {
+  write_plan "$1" "$VERIFY_V_ONLY" "${3:-$PURPOSE_NONE}" "$2"
+}
+
+# --- 検査 11: 通る場合 ---
+
+setup_stale_name_29_days() { write_dated_plan "$1/$A/$D29-list-font.md" ""; }
+setup_stale_progress_10_days() { write_dated_plan "$1/$A/$D60-list-font.md" "- $D10: 手順 1 を終えた。"; }
+setup_stale_completed() { write_dated_plan "$1/$C/$D60-list-font.md" ""; }
+# 記録の中の日付（run_block の日時）もファイル名の日付も古いが、計画の進捗の節の日付は新しい
+setup_stale_record_only() {
+  write_dated_plan "$1/$A/$D60-list-font.md" "- $D10: 手順 1 を終えた。"
+  run_block 1 app-evaluator V1=合格 > "$1/$A/$D60-list-font.acceptance.md"
+}
+setup_stale_undated_name_fresh_progress() { write_dated_plan "$1/$A/list-font.md" "- $D10: 手順 1 を終えた。"; }
+# 基準の日の 1 日後の日付は数える（手元と CI の時刻帯の差のため）
+setup_stale_next_day_progress() { write_dated_plan "$1/$A/$D60-list-font.md" "- $NEXT1: 手順 1 を終えた。"; }
+# うるう年の 2 月 29 日は、基準の日としても、暦にある日付である（基準の日 2028-02-29 の 29 日前の計画）
+setup_stale_29_days_before_leap_day() { write_dated_plan "$1/$A/2028-01-31-list-font.md" ""; }
+# 年をまたぐ日数（基準の日 2027-01-15 の 29 日前）
+setup_stale_29_days_across_year() { write_dated_plan "$1/$A/2026-12-17-list-font.md" ""; }
+
+# --- 検査 11: 失敗する場合 ---
+
+setup_stale_both_old() { write_dated_plan "$1/$A/$D30-list-font.md" "- $D45: 計画を起票した。"; }
+setup_stale_no_date() { write_dated_plan "$1/$A/list-font.md" "- 手順 1 を終えた。"; }
+setup_stale_date_only_in_code_block() {
+  write_dated_plan "$1/$A/$D60-list-font.md" "\`\`\`text
+- $D10: 手順 1 を終えた。
+\`\`\`"
+}
+# 進捗の節の外（目的の節）に書いた日付は数えない
+setup_stale_date_outside_progress() {
+  write_dated_plan "$1/$A/$D60-list-font.md" "" "一覧の文字の大きさを切り替えられるようにする。製品の仕様は無い。方針は $D10 に決めた。"
+}
+# 基準の日の 1 日後より後の日付（予定の日付）は数えない
+setup_stale_only_later_date_is_new() { write_dated_plan "$1/$A/$D60-list-font.md" "- $LATER に再開する。"; }
+setup_stale_only_later_dates() { write_dated_plan "$1/$A/list-font.md" "- $LATER に再開する。"; }
+setup_stale_two_days_later_date() { write_dated_plan "$1/$A/$D60-list-font.md" "- $NEXT2 に再開する。"; }
+# 進捗の節より後の節（発見）に書いた日付は数えない
+setup_stale_date_in_later_section() {
+  write_dated_plan "$1/$A/$D60-list-font.md" ""
+  awk -v line="- $D10 に分かったこと。" '{ print } $0 == "## 発見" { print ""; print line }' "$1/$A/$D60-list-font.md" > "$1/$A/plan.tmp"
+  mv "$1/$A/plan.tmp" "$1/$A/$D60-list-font.md"
+}
+# 前か後ろに数字が続く並びは、日付として数えない
+setup_stale_digits_around_date() { write_dated_plan "$1/$A/$D60-list-font.md" "- 番号 1$D10 と ${D10}5 を控えた。"; }
+# 暦に無い日付は数えない（基準の日 2027-05-01。ファイル名は 60 日前、進捗は 4 月 31 日）
+setup_stale_april_31() { write_dated_plan "$1/$A/2027-03-02-list-font.md" "- 2027-04-31: 手順 1 を終えた。"; }
+# 暦に無い日付しか無い（基準の日 2027-03-01。平年の 2 月 29 日）
+setup_stale_feb_29_common_year() { write_dated_plan "$1/$A/list-font.md" "- 2027-02-29: 手順 1 を終えた。"; }
+# うるう年の 2 月をまたぐ日数（基準の日 2028-03-01 のちょうど 30 日前）
+setup_stale_30_days_across_leap_february() { write_dated_plan "$1/$A/2028-01-31-list-font.md" ""; }
+
+run_case_on "$T11" "古い計画: 進行中の計画が 0 件" pass "" setup_empty
+run_case_on "$T11" "古い計画: ファイル名の日付が 29 日前" pass "" setup_stale_name_29_days
+run_case_on "$T11" "古い計画: ファイル名は 60 日前だが、進捗に 10 日前の日付がある" pass "" setup_stale_progress_10_days
+run_case_on "$T11" "古い計画: completed/ の古い計画は対象にしない" pass "" setup_stale_completed
+run_case_on "$T11" "古い計画: 受け入れ確認の記録だけが古い（記録を計画とみなさない）" pass "" setup_stale_record_only
+run_case_on "$T11" "古い計画: 名前が日付で始まらないが、進捗に 10 日前の日付がある" pass "" setup_stale_undated_name_fresh_progress
+run_case_on "$T11" "古い計画: 進捗に基準の日の 1 日後の日付がある（数える）" pass "" setup_stale_next_day_progress
+run_case_on "2027-01-15" "古い計画: 年をまたいで 29 日前" pass "" setup_stale_29_days_across_year
+run_case_on "2028-02-29" "古い計画: 基準の日がうるう年の 2 月 29 日（暦にある日付）" pass "" setup_stale_29_days_before_leap_day
+
+run_case_on "$T11" "古い計画: ファイル名が 30 日前で、進捗の日付はそれより前" fail "進行中の計画 $A/$D30-list-font.md が古くなっています（最も新しい日付 $D30 から 30 日" setup_stale_both_old
+run_case_on "$T11" "古い計画: 直し方に、進捗の節への追記と completed/ への移動が出る" fail "「## 進捗」の節に、進めた日付（YYYY-MM-DD）の行を足す。終えたなら、「## 結果と振り返り」を書いて docs/exec-plans/completed/ へ移す" setup_stale_both_old
+run_case_on "$T11" "古い計画: 日付を 1 つも読めない計画" fail "進行中の計画 $A/list-font.md の古さを判定できません" setup_stale_no_date
+run_case_on "$T11" "古い計画: 進捗の日付がコードブロックの中にだけある" fail "進行中の計画 $A/$D60-list-font.md が古くなっています（最も新しい日付 $D60 から 60 日" setup_stale_date_only_in_code_block
+run_case_on "$T11" "古い計画: 進捗の節の外に書いた日付は数えない" fail "進行中の計画 $A/$D60-list-font.md が古くなっています（最も新しい日付 $D60 から 60 日" setup_stale_date_outside_progress
+run_case_on "$T11" "古い計画: 進捗の、基準の日の 1 日後より後の日付は数えない" fail "進行中の計画 $A/$D60-list-font.md が古くなっています（最も新しい日付 $D60 から 60 日" setup_stale_only_later_date_is_new
+run_case_on "$T11" "古い計画: 数えられる日付が、基準の日の 1 日後より後のものしか無い" fail "進行中の計画 $A/list-font.md の古さを判定できません" setup_stale_only_later_dates
+run_case_on "2028-03-01" "古い計画: うるう年の 2 月をまたいで、ちょうど 30 日前" fail "進行中の計画 $A/2028-01-31-list-font.md が古くなっています（最も新しい日付 2028-01-31 から 30 日" setup_stale_30_days_across_leap_february
+run_case_on "$T11" "古い計画: 進捗の、基準の日の 2 日後の日付は数えない" fail "進行中の計画 $A/$D60-list-font.md が古くなっています（最も新しい日付 $D60 から 60 日" setup_stale_two_days_later_date
+run_case_on "$T11" "古い計画: 進捗の節より後の節に書いた日付は数えない" fail "進行中の計画 $A/$D60-list-font.md が古くなっています（最も新しい日付 $D60 から 60 日" setup_stale_date_in_later_section
+run_case_on "$T11" "古い計画: 前後に数字が続く並びは日付として数えない" fail "進行中の計画 $A/$D60-list-font.md が古くなっています（最も新しい日付 $D60 から 60 日" setup_stale_digits_around_date
+run_case_on "2027-05-01" "古い計画: 進捗の 4 月 31 日は数えない" fail "進行中の計画 $A/2027-03-02-list-font.md が古くなっています（最も新しい日付 2027-03-02 から 60 日" setup_stale_april_31
+run_case_on "2027-03-01" "古い計画: 進捗の日付が平年の 2 月 29 日だけ" fail "進行中の計画 $A/list-font.md の古さを判定できません" setup_stale_feb_29_common_year
+run_case_on "$T11" "古い計画: 日付が無いときの直し方に、進捗の行の形が出る" fail "「- YYYY-MM-DD: 終えた手順」の形で、作業を進めた日付の行を書く" setup_stale_no_date
+run_case_on "2026-13-01" "古い計画: 基準の日が日付の形でない" fail "環境変数 HARNESS_TODAY の値「2026-13-01」が、YYYY-MM-DD の形の、暦にある日付ではありません" setup_empty
+run_case_on "2027-02-29" "古い計画: 基準の日が平年の 2 月 29 日" fail "環境変数 HARNESS_TODAY の値「2027-02-29」が、YYYY-MM-DD の形の、暦にある日付ではありません" setup_empty
+
+# --- 検査 7: ARCHITECTURE.md に書いた templates/ のパス ---
+
+setup_arch_templates_path_exists() {
+  mkdir -p "$1/templates/module"
+  printf '%s\n' "# ARCHITECTURE" "" "ひな形の置き場は \`templates/module/\` である。" > "$1/ARCHITECTURE.md"
+}
+setup_arch_templates_path_missing() {
+  printf '%s\n' "# ARCHITECTURE" "" "ひな形の置き場は \`templates/module/\` である。" > "$1/ARCHITECTURE.md"
+}
+
+run_case "設計の正本: 書いた templates/ のパスが実在する" pass "" setup_arch_templates_path_exists
+run_case "設計の正本: 書いた templates/ のパスが無い" fail "ARCHITECTURE.md に書いたパス templates/module/ がありません" setup_arch_templates_path_missing
 
 total=$((passed + failed))
 if [ "$failed" -gt 0 ]; then

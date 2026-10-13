@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 文書の検査。手元と CI で同じコマンドを使う: npm run check:docs
 #
-# 確かめること（ハーネスの導入の P5 までの範囲）:
+# 確かめること:
 #   1. AGENTS.md に導入済みの印（「ハーネスの版: N」の 1 行）があり、その版で必須のファイルが実在する
 #   2. CLAUDE.md が「@AGENTS.md」の 1 行（末尾の改行を含む）と完全に一致する
 #   3. AGENTS.md の「文書の地図」に書いたパスが実在する
@@ -11,7 +11,7 @@
 #      一覧にあるのに検査できない Markdown（シンボリックリンク、読めないもの）は失敗にする
 #   5. docs/adr/ の ADR が、すべて目録（docs/adr/README.md）に載っている
 #   6. AGENTS.md の行数が上限以下
-#   7. ARCHITECTURE.md に書いたパスが実在する
+#   7. ARCHITECTURE.md に書いたパス（src/、docs/、scripts/、.github/、templates/ で始まるものと、根のファイル名）が実在する
 #   8. 進行中と完了の計画（docs/exec-plans/active/ と completed/ の直下の .md のうち、名前が .acceptance.md で
 #      終わらないもの）に、docs/PLANS.md の「必須の節」の一覧にある見出しが、すべて行として揃っている。
 #      ``` で囲んだコードブロックの中の行は見出しに数えない。
@@ -44,6 +44,15 @@
 #      (7) 目的の節に書いた仕様のパス（docs/product-specs/<名前>.md。名前は英小文字・数字・ハイフン）が目録にあり、検証の節の仕様の識別子の所属先が、
 #          目的の節に書いた仕様のどれかと一致する
 #      仕様と計画のどちらも、``` で囲んだコードブロックの中の行は数えない
+#  11. 古い計画（決まりの正本は docs/PLANS.md の「置き場所と名前」）。進行中の計画（docs/exec-plans/active/ の直下の .md のうち、
+#      名前が .acceptance.md で終わらないもの）について、ファイル名の先頭の日付と、「## 進捗」の節の中の YYYY-MM-DD の形の
+#      日付のうち、最も新しい日付が、基準の日より STALE_PLAN_DAYS 日以上前なら失敗にする。基準の日の 1 日後より後の日付は
+#      数えない（予定の日付を、進めた日付と読み違えないため。手元と CI の時刻帯の差があるので、1 日後までは数える）。
+#      暦に無い日付（平年の 2 月 29 日、4 月 31 日など）と、前後に数字が続く並び（12026-10-07 など）も数えない。
+#      数える日付が 1 つも無い計画も失敗にする。``` で囲んだコードブロックの中の行は数えない。completed/ の計画と、
+#      受け入れ確認の記録は対象にしない。
+#      基準の日は、環境変数 HARNESS_TODAY（YYYY-MM-DD。試験用）があればその日、無ければ実行した日。
+#      HARNESS_TODAY が暦にある日付でなければ失敗にする
 # 失敗したときは、項目ごとに直し方を表示して、終了コード 1 で終わる。
 set -euo pipefail
 export LC_ALL=C
@@ -52,6 +61,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
 AGENTS_MAX_LINES=120
+# 進行中の計画を古いとみなす日数（検査 11）。変えるときは docs/PLANS.md の「置き場所と名前」も直す
+STALE_PLAN_DAYS=30
 errors=0
 
 fail() {
@@ -209,11 +220,11 @@ if [ -f ARCHITECTURE.md ]; then
     [ -z "$p" ] && continue
     [ -e "$p" ] || fail "ARCHITECTURE.md に書いたパス $p がありません" "ARCHITECTURE.md を実物に合わせるか、$p を作る"
   done <<EOF
-$(grep -oE '`[^`]+`' ARCHITECTURE.md | tr -d '`' | grep -E '^(src|docs|scripts|\.github)/|^[A-Za-z0-9._-]+\.(md|cjs|mjs|ts|json|yml)$' || true)
+$(grep -oE '`[^`]+`' ARCHITECTURE.md | tr -d '`' | grep -E '^(src|docs|scripts|\.github|templates)/|^[A-Za-z0-9._-]+\.(md|cjs|mjs|ts|json|yml)$' || true)
 EOF
 fi
 
-# --- 検査 8〜10 で共有する読み取り ---
+# --- 検査 8〜11 で共有する読み取り ---
 
 # ``` で始まる行ごとに、コードブロックの中と外を切り替え、外の行だけを出す
 outside_code_blocks() {
@@ -837,6 +848,91 @@ $owner"
 $(check_plan_verification "$plan" | sed -n 's/^ID	//p')
 EOF
 done
+
+# 11. 古い計画（決まりの正本は docs/PLANS.md の「置き場所と名前」）
+DATE_SHAPE_RE='^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+
+# 日付（YYYY-MM-DD）を扱う awk の関数。date コマンドの日付の計算は macOS と Linux で書き方が違うので、awk で計算する。
+# どの awk でも同じ結果になるように、substr、int、四則と剰余だけで書く。
+#   valid_date(s): 暦にある日付なら 1（月ごとの日数と、うるう年の 2 月を確かめる）
+#   day_number(s): 通しの日数
+DATE_AWK='
+  function leap_year(y) { return (y % 4 == 0 && y % 100 != 0) || y % 400 == 0 }
+  function valid_date(s,   y, m, d, last) {
+    y = substr(s, 1, 4) + 0; m = substr(s, 6, 2) + 0; d = substr(s, 9, 2) + 0
+    if (m < 1 || m > 12 || d < 1) return 0
+    last = 31
+    if (m == 4 || m == 6 || m == 9 || m == 11) last = 30
+    if (m == 2) { if (leap_year(y)) last = 29; else last = 28 }
+    return d <= last
+  }
+  function day_number(s,   y, m, d) {
+    y = substr(s, 1, 4) + 0; m = substr(s, 6, 2) + 0; d = substr(s, 9, 2) + 0
+    if (m <= 2) { y = y - 1; m = m + 12 }
+    return 365 * y + int(y / 4) - int(y / 100) + int(y / 400) + int((153 * (m - 3) + 2) / 5) + d
+  }
+'
+
+# $1 が、YYYY-MM-DD の形で、暦にある日付か
+is_real_date() {
+  [[ "$1" =~ $DATE_SHAPE_RE ]] || return 1
+  awk -v s="$1" "$DATE_AWK"'BEGIN { exit !valid_date(s) }'
+}
+
+# 標準入力の各行から、YYYY-MM-DD の形の並びを 1 行に 1 つずつ出す。前か後ろに数字が続く並び（12026-10-07、
+# 2026-10-071 など）は、日付でない数字の一部なので出さない
+dates_in_lines() {
+  awk '{
+    line = $0
+    while (match(line, /[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/)) {
+      before = ""
+      if (RSTART > 1) before = substr(line, RSTART - 1, 1)
+      after = substr(line, RSTART + 10, 1)
+      if (before !~ /[0-9]/ && after !~ /[0-9]/) print substr(line, RSTART, 10)
+      line = substr(line, RSTART + 1)
+    }
+  }'
+}
+
+# 計画 $1 の、最も新しい日付を出す（無ければ何も出さない）。$2 = 基準の日。見るのは、ファイル名の先頭の日付と、
+# 「## 進捗」の節の中の YYYY-MM-DD の形の日付。コードブロックの中の行、暦に無い日付、基準の日の 1 日後より後の日付は
+# 数えない
+latest_plan_date() {
+  {
+    basename "$1" .md | sed -n 's/^\([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\)-.*$/\1/p'
+    outside_code_blocks "$1" | awk '/^## /{ on = ($0 == "## 進捗"); next } on' | dates_in_lines
+  } | awk -v base="$2" "$DATE_AWK"'BEGIN { limit = day_number(base) + 1 } valid_date($0) && day_number($0) <= limit { print }' \
+    | sort | tail -n 1
+}
+
+# 日付 $1 から日付 $2 までの日数を出す（どちらも YYYY-MM-DD。$2 が後なら正の数）
+days_between() {
+  awk -v a="$1" -v b="$2" "$DATE_AWK"'BEGIN { print day_number(b) - day_number(a) }'
+}
+
+base_day="${HARNESS_TODAY:-$(date '+%Y-%m-%d')}"
+if ! is_real_date "$base_day"; then
+  fail "環境変数 HARNESS_TODAY の値「$base_day」が、YYYY-MM-DD の形の、暦にある日付ではありません" \
+    "HARNESS_TODAY を YYYY-MM-DD の形の、暦にある日付にするか、外す（外すと、実行した日を基準の日にする）"
+else
+  for plan in docs/exec-plans/active/*.md; do
+    case "$plan" in *.acceptance.md) continue ;; esac
+    # 読めない計画と CR を含む計画は、検査 8 が失敗にしている
+    { [ -f "$plan" ] && [ ! -L "$plan" ]; } || continue
+    grep -q "$(printf '\r')" "$plan" && continue
+    latest="$(latest_plan_date "$plan" "$base_day")"
+    if [ -z "$latest" ]; then
+      fail "進行中の計画 $plan の古さを判定できません（ファイル名の先頭にも「## 進捗」の節にも、数えられる YYYY-MM-DD の形の日付がありません。暦に無い日付と、基準の日 $base_day の 1 日後より後の日付は数えない）" \
+        "$plan の「## 進捗」の節に、「- YYYY-MM-DD: 終えた手順」の形で、作業を進めた日付の行を書く（docs/PLANS.md の「必須の節」の進捗の書き方）"
+      continue
+    fi
+    elapsed="$(days_between "$latest" "$base_day")"
+    if [ "$elapsed" -ge "$STALE_PLAN_DAYS" ]; then
+      fail "進行中の計画 $plan が古くなっています（最も新しい日付 $latest から $elapsed 日。基準の日は $base_day。$STALE_PLAN_DAYS 日以上、日付の更新が無い進行中の計画は失敗にする）" \
+        "作業を進めたなら、$plan の「## 進捗」の節に、進めた日付（YYYY-MM-DD）の行を足す。終えたなら、「## 結果と振り返り」を書いて docs/exec-plans/completed/ へ移す。やめたなら、やめた理由を「## 結果と振り返り」に書いて docs/exec-plans/completed/ へ移す（docs/PLANS.md の「置き場所と名前」）"
+    fi
+  done
+fi
 
 if [ "$errors" -gt 0 ]; then
   echo "check-docs: $errors 件の問題があります" >&2
