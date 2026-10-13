@@ -57,8 +57,36 @@
 set -euo pipefail
 export LC_ALL=C
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-cd "$ROOT"
+# 検査する根。引数が無ければ、自分の置き場から決める（npm run check:docs と CI の呼び出し）。
+# 引数 --root <絶対パス> があれば、その作業ツリーの根を検査する。早期通知（notify.sh）が、起動元のこのスクリプトで、
+# 別の作業ツリーの文書を検査するための形である。検査 1 の必須のファイルの一覧と、検査 11 の日数は、どちらの場合も
+# このスクリプトのものを使う。引数の値が、絶対パスでない、ディレクトリでない、git の作業ツリーの根でないときと、
+# 引数の形が違うときは、検査せずに終了コード 2 で終わる。
+# git の呼び出しには -c core.fsmonitor=false を付ける（検査する作業ツリーの設定で、ファイルの監視のプログラムを起動しないため）。
+bad_root() {
+  echo "check-docs: NG: $1" >&2
+  echo "  使い方: check-docs.sh [--root <git の作業ツリーの根の絶対パス>]" >&2
+  exit 2
+}
+if [ "$#" -eq 0 ]; then
+  ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+else
+  if [ "$#" -ne 2 ] || [ "$1" != "--root" ]; then
+    bad_root "引数の形が違います（受け取るのは --root <絶対パス> だけです）"
+  fi
+  ROOT="$2"
+  case "$ROOT" in
+    /*) ;;
+    *) bad_root "--root の値が絶対パスではありません" ;;
+  esac
+  [ -d "$ROOT" ] || bad_root "--root の値がディレクトリではありません"
+  root_top="$(git -c core.fsmonitor=false -C "$ROOT" rev-parse --show-toplevel 2>/dev/null)" \
+    || bad_root "--root の値が git の作業ツリーの中ではありません"
+  if [ -z "$root_top" ] || [ "$(cd -- "$ROOT" && pwd -P)" != "$(cd -- "$root_top" && pwd -P)" ]; then
+    bad_root "--root の値が git の作業ツリーの根ではありません"
+  fi
+fi
+cd -- "$ROOT"
 
 AGENTS_MAX_LINES=120
 # 進行中の計画を古いとみなす日数（検査 11）。変えるときは docs/PLANS.md の「置き場所と名前」も直す
@@ -161,7 +189,7 @@ fi
 work_dir="$(mktemp -d)"
 trap 'rm -rf "$work_dir"' EXIT
 md_list="$work_dir/md-list"
-git -c core.quotePath=false ls-files -z --cached --others --exclude-standard -- '*.md' > "$md_list"
+git -c core.fsmonitor=false -c core.quotePath=false ls-files -z --cached --others --exclude-standard -- '*.md' > "$md_list"
 while IFS= read -r -d '' md; do
   if [ -L "$md" ]; then
     fail "$md はシンボリックリンクです" "シンボリックリンクをやめ、実体のファイルを置く"
@@ -169,7 +197,7 @@ while IFS= read -r -d '' md; do
   fi
   if [ ! -f "$md" ]; then
     # 作業ツリーで削除したファイルは調べない。それ以外で読めないものは失敗にする
-    [ -n "$(git --literal-pathspecs ls-files --deleted -- "$md")" ] && continue
+    [ -n "$(git -c core.fsmonitor=false --literal-pathspecs ls-files --deleted -- "$md")" ] && continue
     fail "$md を検査できません（一覧にあるのにファイルとして読めません）" "$md の種類と読み取りの権限を確かめる"
     continue
   fi
