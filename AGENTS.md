@@ -51,7 +51,7 @@ ai-news-today（GitHub）に置く。現在は土台だけで、記事の取得�
 | lint | `npm run lint` |
 | 型 | `npm run typecheck` |
 | 試験 | `npm run test` |
-| 文書（必須のファイル、CLAUDE.md、地図、リンク、目録、行数、計画の必須の節、受け入れ確認の記録、製品の仕様の目録と状態） | `npm run check:docs` |
+| 文書（必須のファイル、CLAUDE.md、地図、リンク、目録、行数、計画の必須の節、受け入れ確認の記録、製品の仕様の目録と状態、古い計画） | `npm run check:docs` |
 | 文書の検査の試験（`check-docs.sh` の計画、受け入れ確認の記録、仕様の検査） | `npm run test:harness` |
 | 層の依存の向きと、`src/` の直下の名前 | `npm run check:arch` |
 | 秘匿値（作業ツリーの、コミットする全ファイル） | `npm run check:secrets` |
@@ -74,6 +74,8 @@ ai-news-today（GitHub）に置く。現在は土台だけで、記事の取得�
 | アプリの起動の手順 | `.claude/skills/run-ai-news-today/SKILL.md` | アプリを起動して画面を確かめるとき（受け入れ確認を含む） |
 | 進行中の計画 | `docs/exec-plans/active/` | 作業を再開するとき |
 | 完了した計画 | `docs/exec-plans/completed/` | 過去の作業の経緯を知りたいとき |
+| 技術的負債の一覧 | `docs/exec-plans/tech-debt-tracker.md` | 作業の範囲外の問題を見つけたとき、文書を点検するとき |
+| 検査の由来の記録 | `docs/harness-log.md` | 指摘を検査にするとき、検査の理由を知りたいとき |
 | 品質目標 | `docs/QUALITY_SCORE.md` | 設計の品質を判断するとき |
 | ハーネスの評価課題 | `docs/quality-eval/README.md` | ハーネスを変えた後に効果を測るとき |
 

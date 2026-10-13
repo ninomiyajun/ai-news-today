@@ -18,6 +18,10 @@
 | 外部と時刻の入口 | `src/ports/` | 外部への HTTP（`src/ports/http.ts`）と現在時刻（`src/ports/clock.ts`）の型、本物の実装、試験用の決まった実装 |
 | 型 | `src/domain/` | 記事などの型。他の層を import しない |
 
+`templates/` は層ではない。新しいモジュールを足すときに写す、ひな形の置き場（`templates/module/`）で、アプリのコードからは
+import しない。ひな形は `src/` の何も import せず、それだけで型の検査が通る形に保つ。`src/` の中身が変わっても、ひな形が
+壊れないためである。
+
 ### 確認用のデータ
 
 環境変数 `AI_NEWS_FIXTURE=sample` を付け、かつ `NODE_ENV` が `production` でない起動（`next dev` など）では、
