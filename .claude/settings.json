@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(.env*)",
+      "Read(!.env.example)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/bash \"$CLAUDE_PROJECT_DIR\"/scripts/harness/notify.sh claude",
+            "timeout": 20
+          }
+        ]
+      }
+    ]
+  }
+}

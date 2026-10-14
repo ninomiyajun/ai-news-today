@@ -52,7 +52,7 @@ ai-news-today（GitHub）に置く。現在は土台だけで、記事の取得�
 | 型 | `npm run typecheck` |
 | 試験 | `npm run test` |
 | 文書（必須のファイル、CLAUDE.md、地図、リンク、目録、行数、計画の必須の節、受け入れ確認の記録、製品の仕様の目録と状態、古い計画） | `npm run check:docs` |
-| 文書の検査の試験（`check-docs.sh` の計画、受け入れ確認の記録、仕様の検査） | `npm run test:harness` |
+| 文書の検査の試験（`check-docs.sh` の計画、受け入れ確認の記録、仕様の検査）と、早期通知の試験 | `npm run test:harness` |
 | 層の依存の向きと、`src/` の直下の名前 | `npm run check:arch` |
 | 秘匿値（作業ツリーの、コミットする全ファイル） | `npm run check:secrets` |
 | 秘匿値（push する範囲の各コミットの中身） | `npm run check:secrets:push` |
@@ -89,6 +89,14 @@ ai-news-today（GitHub）に置く。現在は土台だけで、記事の取得�
 - 現在時刻と外部への通信は `src/ports/` からだけ得る（ESLint が他の場所での `fetch` などの通信の名前、`Date.now()`、
   `Date()`、引数の無い `new Date()`、`Temporal.Now` と、通信のためのモジュールの import を拒否する。別名を経由した
   書き方は ESLint では止められない。詳細は `ARCHITECTURE.md` の不変条件）。
+- 早期通知（フックが呼ぶ `scripts/harness/notify.sh`）は、Edit・Write と `apply_patch` の書き込みの後に文書の検査を動かして
+  知らせるだけで、止めない（止めるのは `npm run check` と CI）。信頼できない文書を読ませる作業では、`HARNESS_NOTIFY=off` を
+  付けて起動して止める。フックはサンドボックスと確認の外で動くので、次を守る。理由と限界は `docs/adr/0005-early-notify-hooks.md`。
+  - 会話は、作業ツリーの最上位のフォルダで始める（サブディレクトリで始めると、早期通知も `.env` の拒否の規則も働かない）。
+  - 信頼できない変更の作業ツリーで会話を始めない。`/cd` でも移らない。Codex では本体に取り出さない。
+  - Codex は本体の定義とスクリプトを使う。本体を `origin/main` に進めておく。`.codex/hooks.json` が変わるたびに `/hooks` で信頼し直す。
+  - `.env` の拒否の規則は、秘匿値を守る仕組みではない（Codex、スクリプト経由、`.env` で始まらない名前は止まらない）。
+  - `scripts/harness/`、`.claude/settings.json`、`.codex/hooks.json` の変更はレビューで確かめる。`PATH` に相対の項目を入れない。
 
 <!-- BEGIN:nextjs-agent-rules -->
 
