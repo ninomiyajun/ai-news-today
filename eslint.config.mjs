@@ -17,8 +17,11 @@ const globalMessage = (name) => `${name} を直接使わないでください。
 const networkMessage = `通信のためのモジュール（${NETWORK_MODULES.join("、")}）を src/ports/ の外で使わないでください。${portsOnly}`;
 
 // ブラウザに読み込ませる外部のスクリプトは src/ui/XPostEmbed.tsx の WIDGETS_JS_URL だけにする（ARCHITECTURE.md の不変条件 5）。
-// そのため next/script の import をこのファイルの外で拒否し、JSX の script 要素を src/ の下のすべてで拒否する。
+// そのため next/script の import をこのファイルの外で拒否し、JSX の script 要素を src/ と templates/ の下のすべてで拒否する。
 const SRC_FILES = "src/**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts}";
+// モジュールのひな形（templates/ の下）にも、src/ の下の通常の区画と同じ規則をかける。ひな形は src/ の下へ写して使うので、
+// 写した直後に lint で落ちる形になっていないことを、写す前から確かめるためである（ARCHITECTURE.md の「層と責務」）。
+const TEMPLATE_FILES = "templates/**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts}";
 const SCRIPT_OWNER = "src/ui/XPostEmbed.tsx";
 const externalScriptMessage =
   "外部のスクリプトは src/ui/XPostEmbed.tsx の WIDGETS_JS_URL からだけ読み込んでください（ARCHITECTURE.md の不変条件 5）。";
@@ -40,7 +43,7 @@ const externalScriptSyntax = [
   },
 ];
 
-// 外から受け取った HTML を、文字列のまま画面に入れる書き方を、src/ の下のすべてで拒否する
+// 外から受け取った HTML を、文字列のまま画面に入れる書き方を、src/ と templates/ の下のすべてで拒否する
 // （ARCHITECTURE.md の「将来の作りの注意」の、oEmbed の応答の html の項）。
 // オブジェクトのプロパティは、オブジェクトを書く形（{ dangerouslySetInnerHTML: ... }、{ srcDoc: ... }）だけを拒否し、
 // 分割代入で読む形は拒否しない。
@@ -112,7 +115,7 @@ const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   {
-    files: [SRC_FILES],
+    files: [SRC_FILES, TEMPLATE_FILES],
     ignores: ["src/ports/**"],
     rules: {
       "no-restricted-globals": ["error", ...NETWORK_GLOBALS.map((name) => ({ name, message: globalMessage(name) }))],

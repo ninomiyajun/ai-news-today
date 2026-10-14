@@ -3,12 +3,14 @@
 //
 // 確かめること: ARCHITECTURE.md の不変条件 1、2、5 に当たる規則（通信のための大域の名前、現在時刻、通信のための
 // モジュールの import・require()・import()、next/script の import・require()・import()、JSX の script 要素）について、
-// 3 つの区画（通常の src/ の下、src/ports/ の下、src/ui/XPostEmbed.tsx）のそれぞれで、効くはずの規則が違反の見本を
+// 4 つの区画（通常の src/ の下、src/ports/ の下、src/ui/XPostEmbed.tsx、モジュールのひな形の templates/ の下）のそれぞれで、効くはずの規則が違反の見本を
 // 検出し、対象外のはずの規則が検出しないこと。あわせて、外から受け取った HTML を文字列のまま画面に入れる書き方
 // （JSX の属性 dangerouslySetInnerHTML と srcDoc、オブジェクトに書いた dangerouslySetInnerHTML と srcDoc という名前の
 // プロパティ、innerHTML、outerHTML、srcdoc への代入、insertAdjacentHTML、setHTMLUnsafe、createContextualFragment の呼び出し、
 // document.write と document.writeln の呼び出し。
-// ARCHITECTURE.md の「将来の作りの注意」の、oEmbed の応答の html の項）を、3 つの区画のすべてで拒否すること。
+// ARCHITECTURE.md の「将来の作りの注意」の、oEmbed の応答の html の項）を、4 つの区画のすべてで拒否すること。
+// templates/ の下には、src/ の下の通常の区画と同じ規則がかかること（ひな形を src/ の下へ写した直後に lint で落ちないため。
+// ARCHITECTURE.md の「層と責務」）。
 //
 // この試験がある理由: ESLint の設定は、同じ規則を別の区画に足すと、後の設定が前の設定を置き換える。前からある規則が
 // 知らせなしに無効になっても、npm run lint は通ってしまう（由来は docs/harness-log.md）。
@@ -27,8 +29,9 @@
 //   self. を付けた大域の名前 12 組のうち、見本は 3 組）。見本に無い項目は、設定を変えるレビューで人が確かめる。
 // - eslint.config.mjs の対象の拡張子を増やしたとき。この試験の拡張子の一覧（EXTENSIONS）に、手で足す必要がある
 //   （files の文字列が変わるので、区画の一覧の確認は失敗して知らせるが、新しい拡張子の見本は自動では増えない）。
-// - 区画の一覧に現れない方法で、規則を外す形。全体の ignores（globalIgnores）に src/ の下を足す、ファイルの中に
+// - 区画の一覧に現れない方法で、規則を外す形。全体の ignores（globalIgnores）に src/ または templates/ の下を足す、ファイルの中に
 //   ESLint の無効化のコメントを書く、npm run lint のコマンドの引数で設定を変える、など。
+// - ひな形を templates/ の外（別の名前のディレクトリ）に置く形。規則の対象は src/ と templates/ の下だけである。
 // - 対象の 4 つの規則と違う名前の規則（プラグインの同じ働きの規則など）に置き換える形のうち、名前の末尾が
 //   対象の規則と同じでないもの。
 //
@@ -52,8 +55,9 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 // 持つようになったら、この確認が「見込みに無い区画」として知らせるので、その区画をここに足して見込みを書く。
 const TARGET_RULES = ["no-restricted-globals", "no-restricted-properties", "no-restricted-imports", "no-restricted-syntax"];
 const SRC_GLOB = "src/**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts}";
+const TEMPLATES_GLOB = "templates/**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts}";
 const EXPECTED_BLOCKS = [
-  { files: [SRC_GLOB], ignores: ["src/ports/**"], rules: [...TARGET_RULES].sort() },
+  { files: [SRC_GLOB, TEMPLATES_GLOB], ignores: ["src/ports/**"], rules: [...TARGET_RULES].sort() },
   { files: ["src/ui/XPostEmbed.tsx"], ignores: [], rules: ["no-restricted-imports"] },
   { files: ["src/ports/**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts}"], ignores: [], rules: ["no-restricted-imports", "no-restricted-syntax"] },
 ];
@@ -76,6 +80,11 @@ const ZONES = {
     file: "src/ui/XPostEmbed.tsx",
     jsxFile: "src/ui/XPostEmbed.tsx",
   },
+  templates: {
+    label: "templates/ の下（モジュールのひな形。src/ の下の通常の区画と同じ規則がかかる）",
+    file: "templates/module/lint-rules-sample.ts",
+    jsxFile: "templates/module/lint-rules-sample.tsx",
+  },
 };
 
 // メッセージの目印。eslint.config.mjs のメッセージのうち、不変条件 1、2 のものは「src/ports/ の HttpClient と Clock を…」を、
@@ -86,10 +95,11 @@ const SCRIPT_MARK = "不変条件 5";
 const HTML_MARK = "oEmbed の応答の html の項";
 
 // 区画ごとの見込み。true は「検出するはず」、false は「検出しないはず」。
-const PORTS_ONLY = { general: true, ports: false, owner: true }; // 不変条件 1、2: src/ports/ の外でだけ拒否する
-const SCRIPT_IMPORT = { general: true, ports: true, owner: false }; // 不変条件 5: 持ち主のファイルでだけ import を許す
-const EVERYWHERE = { general: true, ports: true, owner: true }; // 不変条件 5: src/ の下のすべてで拒否する
-const NOWHERE = { general: false, ports: false, owner: false }; // 規則の対象でない書き方
+// templates/ の下は、どの見込みでも通常の src/ の下（general）と同じにする。
+const PORTS_ONLY = { general: true, ports: false, owner: true, templates: true }; // 不変条件 1、2: src/ports/ の外でだけ拒否する
+const SCRIPT_IMPORT = { general: true, ports: true, owner: false, templates: true }; // 不変条件 5: 持ち主のファイルでだけ import を許す
+const EVERYWHERE = { general: true, ports: true, owner: true, templates: true }; // 不変条件 5: src/ と templates/ の下のすべてで拒否する
+const NOWHERE = { general: false, ports: false, owner: false, templates: false }; // 規則の対象でない書き方
 
 const sample = (name, code, ruleId, mark, expected, jsx = false) => ({ name, code, ruleId, mark, expected, jsx });
 
@@ -158,13 +168,20 @@ const SAMPLES = [
   sample("JSX の子に文字列を入れる", 'export const r = (text: string) => <div title="x">{text}</div>;', "no-restricted-syntax", HTML_MARK, NOWHERE, true),
 ];
 
-// 規則の対象の拡張子（eslint.config.mjs の SRC_FILES）。拡張子ごとに、通常の区画と src/ports/ の区画で 1 つずつ確かめる。
+// 規則の対象の拡張子（eslint.config.mjs の SRC_FILES と TEMPLATE_FILES）。拡張子ごとに、通常の区画、src/ports/ の区画、
+// templates/ の区画で 1 つずつ確かめる。
 const EXTENSIONS = ["ts", "tsx", "js", "jsx", "mjs", "cjs", "mts", "cts"];
 const EXTENSION_CASES = EXTENSIONS.flatMap((ext) => [
   {
     zoneLabel: `${ZONES.general.label}。拡張子 ${ext}`,
     file: `src/services/lint-rules-sample.${ext}`,
     ...sample("fetch の呼び出し", 'fetch("https://example.com/");', "no-restricted-globals", PORTS_MARK),
+    expected: true,
+  },
+  {
+    zoneLabel: `${ZONES.templates.label}。拡張子 ${ext}`,
+    file: `templates/module/lint-rules-sample.${ext}`,
+    ...sample("ひな形での fetch の呼び出し", 'fetch("https://example.com/");', "no-restricted-globals", PORTS_MARK),
     expected: true,
   },
   {
@@ -279,6 +296,11 @@ function checkBlocks(config) {
 
 // 失敗する見本（区画の一覧）: 現在の設定の配列を変えたものと、その名前。
 const EXTRA_SYNTAX_ONLY = { "no-restricted-syntax": ["error", { selector: "WithStatement", message: "見本の規則" }] };
+// 現在の設定の配列から、templates/ の下を対象にする files の項目だけを除いたもの（ひな形に規則がかからなかった元の形）。
+const withoutTemplates = (config) =>
+  config.map((e) =>
+    Array.isArray(e?.files) && e.files.includes(TEMPLATES_GLOB) ? { ...e, files: e.files.filter((f) => f !== TEMPLATES_GLOB) } : e,
+  );
 const BROKEN_BLOCK_LISTS = [
   {
     name: "失敗する見本 6: 見本のファイルの名前が当たらない場所（src/sources/**）に、no-restricted-syntax の別の項目だけの区画を足す（元の指摘の形）",
@@ -299,6 +321,11 @@ const BROKEN_BLOCK_LISTS = [
     name: "失敗する見本 9: 見込みにある区画（src/ports/ の下）が無くなる",
     config: eslintConfig.filter((e) => !(e.files ?? []).some((f) => typeof f === "string" && f.startsWith("src/ports/"))),
     expectText: "この試験の見込みにある区画が無い",
+  },
+  {
+    name: "失敗する見本 12: 通常の区画の対象を src/ の下だけに戻し、templates/ の下に規則がかからない（元の指摘の形。技術的負債の TD-1）",
+    config: withoutTemplates(eslintConfig),
+    expectText: `この試験の見込みにある区画が無い: files=${JSON.stringify([SRC_GLOB, TEMPLATES_GLOB])}`,
   },
 ];
 
@@ -404,6 +431,22 @@ const BROKEN_CONFIGS = [
     ],
     expectNoProblems: [],
   },
+  {
+    // 後ろに重ねるのではなく、設定の全体を、templates/ を対象から外したものに置き換える。
+    name: "失敗する見本 13: 通常の区画の対象が src/ の下だけで、templates/ の下に規則がかからない（元の指摘の形。技術的負債の TD-1）",
+    replaceConfig: withoutTemplates(eslintConfig),
+    expectProblems: [
+      ["missing", "templates", "fetch の呼び出し"],
+      ["missing", "templates", "next/script の import"],
+      ["missing", "templates", "JSX の属性 dangerouslySetInnerHTML"],
+      ["missing", "extension", "ひな形での fetch の呼び出し"],
+    ],
+    expectNoProblems: [
+      ["missing", "general", "fetch の呼び出し"],
+      ["missing", "general", "JSX の属性 dangerouslySetInnerHTML"],
+      ["missing", "extension", "fetch の呼び出し"],
+    ],
+  },
 ];
 
 let passed = 0;
@@ -454,7 +497,10 @@ for (const b of BROKEN_BLOCK_LISTS) {
 
 // 失敗する見本: 設定を重ねると、確認が、見込んだ失敗を返す。
 for (const b of BROKEN_CONFIGS) {
-  const problems = await runChecks(new ESLint({ cwd: ROOT, overrideConfig: b.overrideConfig }));
+  const eslint = b.replaceConfig
+    ? new ESLint({ cwd: ROOT, overrideConfigFile: true, overrideConfig: b.replaceConfig })
+    : new ESLint({ cwd: ROOT, overrideConfig: b.overrideConfig });
+  const problems = await runChecks(eslint);
   const notFound = b.expectProblems.filter(([kind, zone, n]) => !has(problems, kind, zone, n));
   const unexpected = b.expectNoProblems.filter(([kind, zone, n]) => has(problems, kind, zone, n));
   const text = problems.map(formatProblem).join("\n");

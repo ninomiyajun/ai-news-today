@@ -27,5 +27,3 @@
 
 | 識別子 | 見つけた日 | 場所 | 内容 | 見つけた作業 |
 |---|---|---|---|---|
-| TD-1 | 2026-10-13 | `eslint.config.mjs` の `SRC_FILES`、`templates/module/` | ひな形に、`src/` の下と同じ lint の規則（`ARCHITECTURE.md` の不変条件 1、2、5 の規則）がかからない。規則の対象が `src/` の下だけのためである。ひな形が、`src/` へ写した直後に lint で落ちる形になっても、写すまで気づけない | `2026-10-13-harness-maintenance-base.md` |
-| TD-2 | 2026-10-13 | `templates/module/`、`ARCHITECTURE.md` の「層と責務」 | ひな形が `src/` の何も import しない決まりを、守らせる検査が無い。決まりは `ARCHITECTURE.md` と `templates/module/README.md` に書いただけで、ひな形に `src/` の import を足しても `npm run check` は通る。決まりが破られても、検査では気づけない | `2026-10-13-harness-maintenance-base.md` |
