@@ -20,7 +20,13 @@
 
 `templates/` は層ではない。新しいモジュールを足すときに写す、ひな形の置き場（`templates/module/`）で、アプリのコードからは
 import しない。ひな形は `src/` の何も import せず、それだけで型の検査が通る形に保つ。`src/` の中身が変わっても、ひな形が
-壊れないためである。
+壊れないためである。`npm run check:arch` が、`templates/` から `src/` への依存と、`src/` から `templates/` への依存を、
+どちらも失敗にする（`.dependency-cruiser.cjs` の `templates-not-to-src` と `src-not-to-templates`。別名 `@/...` で書いた
+import と、型だけの import も検出する）。モジュールの名前を変数で組み立てた `import()` や `require()` と、`vi.mock("@/...")`、
+`vi.importActual("@/...")` のように引数の文字列で書いたパスは検出できないので、レビューで人が確かめる。ひな形を
+`templates/` の外に置くと、この検査も下の ESLint の規則もかからないので、ひな形は `templates/` の下に置く。
+ひな形には、`src/` の下の通常の層と同じ ESLint の規則（下の不変条件 1、2、5 と、「将来の作りの
+注意」の HTML の項）がかかる。
 
 ### 確認用のデータ
 
@@ -55,7 +61,7 @@ import しない。ひな形は `src/` の何も import せず、それだけで
    試験のときに、決まったデータ（`fixtureHttpClient`、`staticSource`）と決まった時刻（`fixedClock`）へ差し替えるため
    である。ESLint が、`src/ports/` の外での通信のための大域の名前（`fetch`、`WebSocket`、`XMLHttpRequest`、
    `EventSource`。`globalThis.`、`window.`、`self.` を付けた形を含む）と、`Date.now()`、`Date()`、引数の無い `new Date()`、
-   `Temporal.Now` を拒否する（`eslint.config.mjs`。対象は `src/` の下の ts、tsx、js、jsx、mjs、cjs、mts、cts）。
+   `Temporal.Now` を拒否する（`eslint.config.mjs`。対象は `src/` と `templates/` の下の ts、tsx、js、jsx、mjs、cjs、mts、cts）。
    `performance.now()` と `new Date(undefined)` は現在時刻を返さないので対象にしない。
 2. 通信のためのモジュール（`http`、`https`、`http2`、`net`、`tls`、`dgram` と、それぞれに `node:` を付けた名前、`undici`）は、
    `src/ports/` の外で import しない。層の向きの規則（上の表）とは別の不変条件で、`fetch` を禁じても、これらを使えば
@@ -69,7 +75,7 @@ import しない。ひな形は `src/` の何も import せず、それだけで
 5. ブラウザに読み込ませる外部のスクリプトは、X の埋め込みのスクリプト `https://platform.twitter.com/widgets.js` だけとする
    （それが自分で読み込む X のリソースを含む）。この URL は `src/ui/XPostEmbed.tsx` の定数 `WIDGETS_JS_URL` の 1 か所にだけ置く。
    ESLint が、`next/script` の import を `src/ui/XPostEmbed.tsx` の外で拒否し、JSX の `script` 要素と、`require()` と `import()` での
-   `next/script` の読み込みを `src/` の下のすべてで拒否する（`eslint.config.mjs`）。`React.createElement("script")` や DOM の操作など、
+   `next/script` の読み込みを `src/` と `templates/` の下のすべてで拒否する（`eslint.config.mjs`）。`React.createElement("script")` や DOM の操作など、
    別の書き方で読み込む形は ESLint では止められないので、レビューで人が確かめる。1 とは別の関心事（ブラウザに読み込ませる外部のスクリプトの信頼の範囲）で、理由は
    `docs/adr/0003-x-post-embed.md`。
 
@@ -84,8 +90,15 @@ import しない。ひな形は `src/` の何も import せず、それだけで
 - X の投稿の URL は、`src/curation/x-post-url.ts` で正規の形（`https://x.com/<利用者名>/status/<id>`。クエリ、断片、
   `/status/<id>` の後ろの道を落とす）にそろえてから扱う。記事に添える文章（`NewsItem` の `text`）は、HTML の実体参照を
   解いた平文で渡す（HTML から平文にするのは情報源の責務）。
-- X の oEmbed の応答の `html` は、画面に入れない（`dangerouslySetInnerHTML` を使わない）。外から受け取った HTML を入れると、
+- X の oEmbed の応答の `html` は、画面に入れない。外から受け取った HTML を入れると、
   応答の中身しだいで任意のスクリプトが画面で動きうるためである。埋め込みは、正規の形の URL から React の要素で組み立てる。
+  ESLint が、HTML の文字列を画面に入れる書き方を `src/` と `templates/` の下のすべてで拒否する（`eslint.config.mjs`）。対象は、JSX の属性
+  `dangerouslySetInnerHTML` と `srcDoc`、オブジェクトに書いた `dangerouslySetInnerHTML` と `srcDoc` という名前のプロパティ、
+  `innerHTML`、`outerHTML`、`srcdoc` への代入、`insertAdjacentHTML`、`setHTMLUnsafe`、`createContextualFragment`、
+  `document.write`、`document.writeln` の呼び出し（名前を文字列で書いた `el["innerHTML"]` の形と、`window.`、`globalThis.`、
+  `self.` を付けた `document` を含む）である。書いた名前の形だけを見るので、`{...props}` の展開で渡す形、名前を変数で
+  組み立てたプロパティ（`el[key] = ...`）、別名を経由した書き方（`const d = document; d.write(...)`）、`Object.assign` などで
+  プロパティを書き込む形、`DOMParser`、`Document.parseHTMLUnsafe` など別の入口は止められない。この形はレビューで人が確かめる。
 - `widgets.js`（不変条件 5）は、このアプリと同じ origin で制限なしに動き、画面の DOM と同じ origin の入口を呼べる。
   状態を変える入口（ブックマークレットの登録、翻訳の実行など）を作るときは、このスクリプトから呼ばれうることを前提に設計する。
 

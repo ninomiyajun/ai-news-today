@@ -43,5 +43,6 @@ if (bad.length > 0) {
 }
 JS
 
-# err-long は、違反ごとに規則の comment（直し方）も表示する
-npx --no-install depcruise --config .dependency-cruiser.cjs --output-type err-long src
+# err-long は、違反ごとに規則の comment（直し方）も表示する。
+# templates/ も対象に入れる。入れないと、templates/ の下のファイルから出る依存（templates-not-to-src の規則）を調べないため。
+npx --no-install depcruise --config .dependency-cruiser.cjs --output-type err-long src templates

@@ -39,6 +39,29 @@ module.exports = {
       from: { path: "^src/", pathNot: `^src/(${LAYERS.join("|")})/` },
       to: {},
     },
+    // モジュールのひな形（templates/）と src/ の間の依存は、どちらの向きも拒否する（ARCHITECTURE.md の「層と責務」）。
+    // tsconfig の別名（@/...）も src/ のパスへ解決してから照合するので、別名で書いた import も検出する。
+    {
+      name: "templates-not-to-src",
+      severity: "error",
+      comment:
+        "templates/ の下のひな形が src/ の下を import しています。ひな形は src/ の何も import せず、それだけで型の検査が通る形に保ちます" +
+        "（src/ の中身が変わっても、ひな形が壊れないため）。" +
+        "直し方: ひな形の中で要る型や値を、ひな形のディレクトリの中に置くか、ひな形の引数で受け取る形にする（@/... の別名でも src/ を指すので同じ）。" +
+        "根拠: ARCHITECTURE.md の「層と責務」の templates/ の段落、templates/module/README.md の「守る決まり」。",
+      from: { path: "^templates/" },
+      to: { path: "^src/" },
+    },
+    {
+      name: "src-not-to-templates",
+      severity: "error",
+      comment:
+        "src/ の下のコードが templates/ の下のひな形を import しています。templates/ は層ではなく、写して使うひな形の置き場です。" +
+        "直し方: ひな形を src/ の該当の層へ写し、写したファイルを import する（写し方は templates/module/README.md の「使い方」）。" +
+        "根拠: ARCHITECTURE.md の「層と責務」の templates/ の段落。",
+      from: { path: "^src/" },
+      to: { path: "^templates/" },
+    },
     {
       name: "no-circular",
       severity: "error",
