@@ -52,7 +52,7 @@ ai-news-today（GitHub）に置く。現在は土台だけで、記事の取得�
 | 型 | `npm run typecheck` |
 | 試験 | `npm run test` |
 | 文書（必須のファイル、CLAUDE.md、地図、リンク、目録、行数、計画の必須の節、受け入れ確認の記録、製品の仕様の目録と状態、古い計画） | `npm run check:docs` |
-| 文書の検査の試験（`check-docs.sh` の計画、受け入れ確認の記録、仕様の検査）と、早期通知の試験 | `npm run test:harness` |
+| 文書の検査の試験（`check-docs.sh` の計画、受け入れ確認の記録、仕様の検査）、早期通知の試験、ESLint の規則が区画ごとに働くことの試験（`lint-rules.test.mjs`） | `npm run test:harness` |
 | 層の依存の向きと、`src/` の直下の名前 | `npm run check:arch` |
 | 秘匿値（作業ツリーの、コミットする全ファイル） | `npm run check:secrets` |
 | 秘匿値（push する範囲の各コミットの中身） | `npm run check:secrets:push` |
