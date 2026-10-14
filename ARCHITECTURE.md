@@ -84,8 +84,15 @@ import しない。ひな形は `src/` の何も import せず、それだけで
 - X の投稿の URL は、`src/curation/x-post-url.ts` で正規の形（`https://x.com/<利用者名>/status/<id>`。クエリ、断片、
   `/status/<id>` の後ろの道を落とす）にそろえてから扱う。記事に添える文章（`NewsItem` の `text`）は、HTML の実体参照を
   解いた平文で渡す（HTML から平文にするのは情報源の責務）。
-- X の oEmbed の応答の `html` は、画面に入れない（`dangerouslySetInnerHTML` を使わない）。外から受け取った HTML を入れると、
+- X の oEmbed の応答の `html` は、画面に入れない。外から受け取った HTML を入れると、
   応答の中身しだいで任意のスクリプトが画面で動きうるためである。埋め込みは、正規の形の URL から React の要素で組み立てる。
+  ESLint が、HTML の文字列を画面に入れる書き方を `src/` の下のすべてで拒否する（`eslint.config.mjs`）。対象は、JSX の属性
+  `dangerouslySetInnerHTML` と `srcDoc`、オブジェクトに書いた `dangerouslySetInnerHTML` と `srcDoc` という名前のプロパティ、
+  `innerHTML`、`outerHTML`、`srcdoc` への代入、`insertAdjacentHTML`、`setHTMLUnsafe`、`createContextualFragment`、
+  `document.write`、`document.writeln` の呼び出し（名前を文字列で書いた `el["innerHTML"]` の形と、`window.`、`globalThis.`、
+  `self.` を付けた `document` を含む）である。書いた名前の形だけを見るので、`{...props}` の展開で渡す形、名前を変数で
+  組み立てたプロパティ（`el[key] = ...`）、別名を経由した書き方（`const d = document; d.write(...)`）、`Object.assign` などで
+  プロパティを書き込む形、`DOMParser`、`Document.parseHTMLUnsafe` など別の入口は止められない。この形はレビューで人が確かめる。
 - `widgets.js`（不変条件 5）は、このアプリと同じ origin で制限なしに動き、画面の DOM と同じ origin の入口を呼べる。
   状態を変える入口（ブックマークレットの登録、翻訳の実行など）を作るときは、このスクリプトから呼ばれうることを前提に設計する。
 

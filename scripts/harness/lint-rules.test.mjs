@@ -4,7 +4,11 @@
 // 確かめること: ARCHITECTURE.md の不変条件 1、2、5 に当たる規則（通信のための大域の名前、現在時刻、通信のための
 // モジュールの import・require()・import()、next/script の import・require()・import()、JSX の script 要素）について、
 // 3 つの区画（通常の src/ の下、src/ports/ の下、src/ui/XPostEmbed.tsx）のそれぞれで、効くはずの規則が違反の見本を
-// 検出し、対象外のはずの規則が検出しないこと。
+// 検出し、対象外のはずの規則が検出しないこと。あわせて、外から受け取った HTML を文字列のまま画面に入れる書き方
+// （JSX の属性 dangerouslySetInnerHTML と srcDoc、オブジェクトに書いた dangerouslySetInnerHTML と srcDoc という名前の
+// プロパティ、innerHTML、outerHTML、srcdoc への代入、insertAdjacentHTML、setHTMLUnsafe、createContextualFragment の呼び出し、
+// document.write と document.writeln の呼び出し。
+// ARCHITECTURE.md の「将来の作りの注意」の、oEmbed の応答の html の項）を、3 つの区画のすべてで拒否すること。
 //
 // この試験がある理由: ESLint の設定は、同じ規則を別の区画に足すと、後の設定が前の設定を置き換える。前からある規則が
 // 知らせなしに無効になっても、npm run lint は通ってしまう（由来は docs/harness-log.md）。
@@ -15,7 +19,8 @@
 //
 // この試験が守れる範囲: 下の SAMPLES と EXPECTED_BLOCKS に書いた形だけである。次の形は守れない。
 // - 別名を経由した書き方（const g = globalThis; g.fetch(...)、モジュールの名前を変数で組み立てた import()、
-//   React.createElement("script") など）。ESLint の規則が検出しないので、この試験でも守れない。ARCHITECTURE.md の
+//   React.createElement("script")、{...props} の展開で dangerouslySetInnerHTML を渡す形、const d = document; d.write(...)、
+//   名前を変数で組み立てたプロパティ（el[key] = ...）、Object.assign での書き込み、DOMParser などの別の入口など）。ESLint の規則が検出しないので、この試験でも守れない。ARCHITECTURE.md の
 //   不変条件に書いたとおり、レビューで人が確かめる。
 // - 後の区画で制限を並べ直すときに、一部の項目だけを落とす誤り。検出できるのは、見本にある項目だけである
 //   （通信のためのモジュール 13 個のうち、見本は node:http、https、undici、node:https、net の 5 個。globalThis.、window.、
@@ -77,6 +82,8 @@ const ZONES = {
 // 不変条件 5 のものは「不変条件 5」を含む。
 const PORTS_MARK = "src/ports/";
 const SCRIPT_MARK = "不変条件 5";
+// HTML の制限のメッセージは「oEmbed の応答の html の項」を含む。
+const HTML_MARK = "oEmbed の応答の html の項";
 
 // 区画ごとの見込み。true は「検出するはず」、false は「検出しないはず」。
 const PORTS_ONLY = { general: true, ports: false, owner: true }; // 不変条件 1、2: src/ports/ の外でだけ拒否する
@@ -116,6 +123,39 @@ const SAMPLES = [
   sample("next/script の import()", 'export const r = () => import("next/script");', "no-restricted-syntax", SCRIPT_MARK, EVERYWHERE),
   sample("JSX の script 要素", 'export const r = <script src="https://example.com/a.js" />;', "no-restricted-syntax", SCRIPT_MARK, EVERYWHERE, true),
   sample("JSX の script でない要素", "export const r = <div />;", "no-restricted-syntax", SCRIPT_MARK, NOWHERE, true),
+  // 外から受け取った HTML を文字列のまま画面に入れる書き方（ARCHITECTURE.md の「将来の作りの注意」）
+  sample("JSX の属性 dangerouslySetInnerHTML", 'export const r = (html: string) => <div dangerouslySetInnerHTML={{ __html: html }} />;', "no-restricted-syntax", HTML_MARK, EVERYWHERE, true),
+  sample("オブジェクトのプロパティ dangerouslySetInnerHTML", 'export const r = { dangerouslySetInnerHTML: { __html: "<b>x</b>" } };', "no-restricted-syntax", HTML_MARK, EVERYWHERE),
+  sample("文字列の名前のプロパティ \"dangerouslySetInnerHTML\"", 'export const r = { "dangerouslySetInnerHTML": { __html: "<b>x</b>" } };', "no-restricted-syntax", HTML_MARK, EVERYWHERE),
+  sample("innerHTML への代入", 'export const r = (el: HTMLElement) => { el.innerHTML = "<b>x</b>"; };', "no-restricted-syntax", HTML_MARK, EVERYWHERE),
+  sample("innerHTML への += の代入", 'export const r = (el: HTMLElement) => { el.innerHTML += "<b>x</b>"; };', "no-restricted-syntax", HTML_MARK, EVERYWHERE),
+  sample("outerHTML への代入", 'export const r = (el: HTMLElement) => { el.outerHTML = "<b>x</b>"; };', "no-restricted-syntax", HTML_MARK, EVERYWHERE),
+  sample("el[\"innerHTML\"] への代入", 'export const r = (el: HTMLElement) => { el["innerHTML"] = "<b>x</b>"; };', "no-restricted-syntax", HTML_MARK, EVERYWHERE),
+  sample("insertAdjacentHTML の呼び出し", 'export const r = (el: HTMLElement) => el.insertAdjacentHTML("beforeend", "<b>x</b>");', "no-restricted-syntax", HTML_MARK, EVERYWHERE),
+  sample("document.write の呼び出し", 'export const r = () => document.write("<b>x</b>");', "no-restricted-syntax", HTML_MARK, EVERYWHERE),
+  sample("document.writeln の呼び出し", 'export const r = () => document.writeln("<b>x</b>");', "no-restricted-syntax", HTML_MARK, EVERYWHERE),
+  sample("名前を文字列で書いた el[\"insertAdjacentHTML\"] の呼び出し", 'export const r = (el: HTMLElement) => el["insertAdjacentHTML"]("beforeend", "<b>x</b>");', "no-restricted-syntax", HTML_MARK, EVERYWHERE),
+  sample("setHTMLUnsafe の呼び出し", 'export const r = (el: HTMLElement) => el.setHTMLUnsafe("<b>x</b>");', "no-restricted-syntax", HTML_MARK, EVERYWHERE),
+  sample("createContextualFragment の呼び出し", 'export const r = (range: Range) => range.createContextualFragment("<b>x</b>");', "no-restricted-syntax", HTML_MARK, EVERYWHERE),
+  sample("名前を文字列で書いた document[\"write\"] の呼び出し", 'export const r = () => document["write"]("<b>x</b>");', "no-restricted-syntax", HTML_MARK, EVERYWHERE),
+  sample("window.document.write の呼び出し", 'export const r = () => window.document.write("<b>x</b>");', "no-restricted-syntax", HTML_MARK, EVERYWHERE),
+  sample("globalThis.document.writeln の呼び出し", 'export const r = () => globalThis.document.writeln("<b>x</b>");', "no-restricted-syntax", HTML_MARK, EVERYWHERE),
+  sample("self.document.write の呼び出し", 'export const r = () => self.document.write("<b>x</b>");', "no-restricted-syntax", HTML_MARK, EVERYWHERE),
+  sample("window[\"document\"].write の呼び出し", 'export const r = () => window["document"].write("<b>x</b>");', "no-restricted-syntax", HTML_MARK, EVERYWHERE),
+  sample("JSX の属性 srcDoc（iframe）", "export const r = (html: string) => <iframe srcDoc={html} />;", "no-restricted-syntax", HTML_MARK, EVERYWHERE, true),
+  sample("オブジェクトのプロパティ srcDoc", "export const r = (html: string) => ({ srcDoc: html });", "no-restricted-syntax", HTML_MARK, EVERYWHERE),
+  sample("文字列の名前のプロパティ \"srcDoc\"", 'export const r = (html: string) => ({ "srcDoc": html });', "no-restricted-syntax", HTML_MARK, EVERYWHERE),
+  sample("srcdoc への代入", "export const r = (f: HTMLIFrameElement, html: string) => { f.srcdoc = html; };", "no-restricted-syntax", HTML_MARK, EVERYWHERE),
+  sample("f[\"srcdoc\"] への代入", 'export const r = (f: HTMLIFrameElement, html: string) => { f["srcdoc"] = html; };', "no-restricted-syntax", HTML_MARK, EVERYWHERE),
+  sample("JSX の属性 srcdoc（小文字で書いた形）", "export const r = (html: string) => <iframe srcdoc={html} />;", "no-restricted-syntax", HTML_MARK, EVERYWHERE, true),
+  sample("innerHTML の読み取り（画面に入れない）", "export const r = (el: HTMLElement) => el.innerHTML;", "no-restricted-syntax", HTML_MARK, NOWHERE),
+  sample("textContent への代入（文字として入れる）", 'export const r = (el: HTMLElement) => { el.textContent = "<b>x</b>"; };', "no-restricted-syntax", HTML_MARK, NOWHERE),
+  sample("insertAdjacentText の呼び出し（文字として入れる）", 'export const r = (el: HTMLElement) => el.insertAdjacentText("beforeend", "x");', "no-restricted-syntax", HTML_MARK, NOWHERE),
+  sample("dangerouslySetInnerHTML の分割代入での読み取り", "export const r = ({ dangerouslySetInnerHTML }: { dangerouslySetInnerHTML?: unknown }) => dangerouslySetInnerHTML === undefined;", "no-restricted-syntax", HTML_MARK, NOWHERE),
+  sample("document でないオブジェクトの write の呼び出し", 'export const r = (w: { write: (s: string) => void }) => w.write("x");', "no-restricted-syntax", HTML_MARK, NOWHERE),
+  sample("srcdoc の読み取り（画面に入れない）", "export const r = (f: HTMLIFrameElement) => f.srcdoc;", "no-restricted-syntax", HTML_MARK, NOWHERE),
+  sample("JSX の iframe の src 属性", 'export const r = <iframe src="https://example.com/" />;', "no-restricted-syntax", HTML_MARK, NOWHERE, true),
+  sample("JSX の子に文字列を入れる", 'export const r = (text: string) => <div title="x">{text}</div>;', "no-restricted-syntax", HTML_MARK, NOWHERE, true),
 ];
 
 // 規則の対象の拡張子（eslint.config.mjs の SRC_FILES）。拡張子ごとに、通常の区画と src/ports/ の区画で 1 つずつ確かめる。
@@ -151,13 +191,14 @@ const ALL_CASES = [
 const HOW_TO_FIX_MISSING =
   "eslint.config.mjs で、この区画に当たる設定のうち最後に書いたものが、この規則の設定の全体になる（同じ規則を別の区画に足すと、" +
   "後の設定が前の設定を置き換える）。規則を足すときは同じ区画にまとめるか、後の区画で、前の区画の制限も並べ直す。" +
-  "メッセージの文面を変えただけのときは、この試験の目印（PORTS_MARK、SCRIPT_MARK）を合わせて直す。";
+  "メッセージの文面を変えただけのときは、この試験の目印（PORTS_MARK、SCRIPT_MARK、HTML_MARK）を合わせて直す。";
 const HOW_TO_FIX_EXTRA =
   "eslint.config.mjs で、この区画に当たる files と ignores の範囲を見直す（src/ports/ は不変条件 1、2 の対象外で、" +
   "next/script の import は src/ui/XPostEmbed.tsx でだけ許す）。不変条件そのものを変えるときは、ARCHITECTURE.md と、" +
   "この試験の見込み（SAMPLES）を同じ変更で直す。";
 const HOW_TO_FIX_BROKEN = "この試験の見本のコード（SAMPLES）を、ESLint が解析できる形に直す。";
-const BASIS = "ARCHITECTURE.md の「不変条件」の 1、2、5。この試験の由来は docs/harness-log.md。";
+const BASIS =
+  "ARCHITECTURE.md の「不変条件」の 1、2、5 と、「将来の作りの注意」の、oEmbed の応答の html の項。この試験の由来は docs/harness-log.md。";
 
 // 設定を 1 つ受け取り、すべての見本を確かめて、見込みと違うものを返す（空の配列なら、確認は通った）。
 async function runChecks(eslint) {
@@ -325,6 +366,42 @@ const BROKEN_CONFIGS = [
     name: "失敗する見本 5: 規則がエラーでなく警告になっている（npm run lint は通ってしまう）",
     overrideConfig: [{ files: [SRC_GLOB], rules: { "no-restricted-globals": ["warn", { name: "fetch", message: `見本の規則（${PORTS_MARK}）` }] } }],
     expectProblems: [["missing", "general", "fetch の呼び出し"]],
+    expectNoProblems: [],
+  },
+  {
+    name: "失敗する見本 10: src/ports/ の区画で no-restricted-syntax を並べ直すときに、HTML の制限（htmlSyntax）を落とす",
+    overrideConfig: [
+      {
+        files: ["src/ports/**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts}"],
+        rules: {
+          "no-restricted-syntax": ["error", { selector: "JSXOpeningElement[name.name='script']", message: `見本の規則（${SCRIPT_MARK}）` }],
+        },
+      },
+    ],
+    expectProblems: [
+      ["missing", "ports", "JSX の属性 dangerouslySetInnerHTML"],
+      ["missing", "ports", "innerHTML への代入"],
+      ["missing", "ports", "document.write の呼び出し"],
+    ],
+    expectNoProblems: [
+      ["missing", "ports", "JSX の script 要素"],
+      ["missing", "general", "JSX の属性 dangerouslySetInnerHTML"],
+      ["missing", "owner", "innerHTML への代入"],
+    ],
+  },
+  {
+    name: "失敗する見本 11: 規則を広げすぎて、innerHTML の読み取りまで拒否する",
+    overrideConfig: [
+      {
+        files: [SRC_GLOB],
+        rules: { "no-restricted-syntax": ["error", { selector: "MemberExpression[property.name='innerHTML']", message: `見本の規則（${HTML_MARK}）` }] },
+      },
+    ],
+    expectProblems: [
+      ["extra", "general", "innerHTML の読み取り（画面に入れない）"],
+      ["extra", "ports", "innerHTML の読み取り（画面に入れない）"],
+      ["extra", "owner", "innerHTML の読み取り（画面に入れない）"],
+    ],
     expectNoProblems: [],
   },
 ];
