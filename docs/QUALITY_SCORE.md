@@ -9,6 +9,6 @@
 |---|---|---|
 | 層の依存の向きが `ARCHITECTURE.md` のとおり | 違反の件数（0 を保つ） | `npm run check:arch` |
 | 外部と時刻を差し替えて試験できる | `src/ports/` の外での `fetch` と現在時刻の使用（0 を保つ） | `npm run lint` |
-| 秘匿値がリポジトリに無い | 検出の件数（0 を保つ） | `npm run check:secrets` |
+| 秘匿値がリポジトリに無い | 検出の件数（0 を保つ） | `npm run check:secrets`（作業ツリー）と `npm run check:secrets:push`（push する範囲の各コミットの中身。CI も同じ検査をする） |
 | 文書が実物と合っている | 必須のファイル、地図、リンク、目録の不整合（0 を保つ） | `npm run check:docs` |
 | 整形・選別の振る舞いが試験で守られている | `src/curation/` と `src/services/` の試験が通る | `npm run test` |
