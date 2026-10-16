@@ -1,0 +1,64 @@
+# 定期の走査。結果は成果物に残すだけで、通知しない（所見があってもジョブは成功で終える）。判断の記録は docs/adr/0006-drift-scan.md。
+# 間隔の日数: 7
+# 成果物の名前の接頭辞: drift-scan-
+# 走査の本体は scripts/harness/drift-scan.sh（このファイルは呼ぶだけ）。上の 2 行の注釈は、走査と文書の点検の取得の手順が
+# 機械的に読むので、形を変えない。間隔の日数は cron と合わせる（走査が照らし合わせ、合わなければ失敗にする）。
+# アクションはコミットの SHA で固定し、版の名前をコメントに残す（更新は .github/dependabot.yml）。
+name: drift-scan
+
+on:
+  schedule:
+    # 毎週月曜 00:23 UTC。遅れを減らすため、毎時の始まりを避ける（GitHub の文書の勧め）
+    - cron: "23 0 * * 1"
+  workflow_dispatch:
+  # 走査そのものと、走査が読む文書を変える pull request でだけ試す。
+  # pull_request_target にしない（フォークの pull request に書き込みの権限を渡さないため）。
+  pull_request:
+    paths:
+      - .github/workflows/drift-scan.yml
+      - scripts/harness/drift-scan.sh
+      - scripts/harness/drift-scan.test.sh
+      - docs/QUALITY_SCORE.md
+      - docs/exec-plans/tech-debt-tracker.md
+      - AGENTS.md
+      - package.json
+
+permissions:
+  contents: read
+
+# 契機ごとに別のグループにする（予定実行が pull request の実行に取り消されないため）。待ちは既定の 1 つで、
+# 同じグループの待ちの古い実行は、新しい実行に置き換わる。
+concurrency:
+  group: drift-scan-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # 成果物の保存期間（日）。予定実行は 90 日（公開リポジトリの上限）、手動の実行と pull request は 7 日
+      DRIFT_SCAN_RETENTION_DAYS: ${{ github.event_name == 'schedule' && '90' || '7' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # 文書と技術的負債の場所の変更の履歴を数えるため、履歴をすべて取得する
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: install（インストール用のスクリプトを動かさない）
+        run: npm ci --ignore-scripts
+      # 走査の中で、公開してよいかの検査も行う。通らなければ報告を消して失敗するので、次の段は動かない
+      - name: drift-scan（走査と、公開してよいかの検査）
+        run: bash scripts/harness/drift-scan.sh --out drift-scan-out
+      # if: always() を付けない（公開してよいかの検査に通ったときだけ上げる）
+      - name: upload（報告だけを成果物に残す）
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: drift-scan-${{ github.run_id }}
+          path: drift-scan-out/report.md
+          if-no-files-found: error
+          retention-days: ${{ env.DRIFT_SCAN_RETENTION_DAYS }}
