@@ -571,6 +571,25 @@ else
   ok "公開しない 3: 出力に値を出さない"
 fi
 
+# --- 写しの一致。走査の CHECK7_RE は、check-docs.sh の検査 7（ARCHITECTURE.md に書いたパス）の正規表現の写しなので、
+# 2 つのファイルから正規表現の文字列を取り出して比べる。どちらかで取り出せない（該当の行が 1 行でない、または空）ときも失敗にする
+# 比べるのは正規表現の文字列だけで、その前後の取り出し方（バッククォートの中身を取り出す部分）の違いは比べない
+OUT=""
+OUT_DIR="$TMP_ROOT/no-report"
+name="写し 1: drift-scan.sh の CHECK7_RE が、check-docs.sh の検査 7 の正規表現と同じ"
+docs_re_lines="$(grep -F 'ARCHITECTURE.md | tr -d' "$ROOT/scripts/harness/check-docs.sh" |
+  sed -n "s/^.*| grep -E '\([^']*\)' || true)\$/\1/p" || true)"
+scan_re_lines="$(sed -n "s/^CHECK7_RE='\([^']*\)'\$/\1/p" "$ROOT/scripts/harness/drift-scan.sh" || true)"
+if [ -z "$docs_re_lines" ] || [ "$(printf '%s\n' "$docs_re_lines" | wc -l | tr -d ' ')" -ne 1 ]; then
+  ng "$name" "check-docs.sh から検査 7 の正規表現を 1 つだけ取り出せない（取り出せないか、2 つ以上ある）。検査 7 の行の形を変えたら、この試験の取り出し方も直す。"
+elif [ -z "$scan_re_lines" ] || [ "$(printf '%s\n' "$scan_re_lines" | wc -l | tr -d ' ')" -ne 1 ]; then
+  ng "$name" "drift-scan.sh から CHECK7_RE を 1 つだけ取り出せない（取り出せないか、2 つ以上ある）。CHECK7_RE='...' の 1 行の形を変えたら、この試験の取り出し方も直す。"
+elif [ "$docs_re_lines" != "$scan_re_lines" ]; then
+  ng "$name" "正規表現が違う。check-docs.sh: $docs_re_lines／drift-scan.sh: $scan_re_lines。同じ変更で両方を同じにする（どちらの注記にも、写しがあることを書いてある）。"
+else
+  ok "$name"
+fi
+
 total=$((passed + failed))
 if [ "$failed" -gt 0 ]; then
   echo "drift-scan.test: $total 件中 $failed 件が期待と違います" >&2
