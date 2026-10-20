@@ -1,6 +1,24 @@
 #!/usr/bin/env bash
-# check-docs.sh の試験（検査 7 の一部、検査 8、検査 9: 受け入れ確認の記録、検査 10: 製品の仕様、検査 11: 古い計画）。手元と CI で同じコマンドを使う:
+# check-docs.sh の試験（検査 7 の一部、検査 8、検査 9: 受け入れ確認の記録、検査 10: 製品の仕様、検査 11: 古い計画、
+# 検査 12: 文書の検査の一覧、検査 13: 通信の名前の一覧）。手元と CI で同じコマンドを使う:
 # npm run test:harness
+#
+# 検査 12 が受け持てない形（レビューで人が確かめる）:
+# - check-docs.sh に検査の処理を足したのに、冒頭の「確かめること」にも CHECK_NAMES にも足さない形（検査 12 は、冒頭の一覧と
+#   CHECK_NAMES の数を突き合わせるだけで、処理の数は数えない）
+# - 名前が検査の中身を正しく言い表しているか、と、ほかの文書に書いた検査の一覧（いまは無い）
+#
+# 検査 13 の読み取りの前提と、受け持てない形:
+# - 前提: ARCHITECTURE.md の不変条件 2 は「（`http`、…、`dgram` と、それぞれに `node:` を付けた名前、`undici`）」の形で、
+#   「と、それぞれに `node:` を付けた名前、」の前の名前を node: 付きと無しに展開し、後の名前をそのまま足して読む。不変条件 1 は
+#   「通信のための大域の名前（`fetch`、…、`EventSource`。」の形で読む。eslint.config.mjs は、NETWORK_MODULE_BASES と
+#   NETWORK_GLOBALS が「const 名前 = [ "…", … ];」の 1 行、NETWORK_MODULES が flatMap で node: 付きと無しに展開して末尾に
+#   名前を足す 1 行である形で読む。書き方を変えると、黙って通らずに失敗する（下の 2 つの場合で確かめる）。不変条件の
+#   折り返しの位置が空白に来ても読める（下の通る場合で確かめる）が、語の途中で折り返すと前提の崩れとして失敗する
+# - ほかの文書の通信の名前（docs/QUALITY_SCORE.md の「http、https、net など」の一部の列挙）は比べない
+# - scripts/harness/lint-rules.test.mjs の注釈の「通信のためのモジュール 13 個」の数と見本の選び方は確かめない
+#   （名前を増やしたときは、その注釈をレビューで人が直す）
+# - 定数の名前の一覧が、規則（no-restricted-imports など）で実際に使われているかは確かめない（lint-rules.test.mjs の見本が一部を守る）
 #
 # 場合ごとに、一時ディレクトリに小さなリポジトリ（git init だけ。コミットはしない）を作り、check-docs.sh の写しと
 # 本物の docs/PLANS.md の写し（検査 10 の場合は本物の docs/product-specs/README.md の写しも）を置いて、計画・記録・仕様の
@@ -38,18 +56,50 @@ CASE_TODAY=""   # 場合ごとの基準の日（run_case_on が指定する。�
 passed=0
 failed=0
 
-# 検査 1〜7 を通る最小のリポジトリを作る
+# 検査 12 の対象の行。本物の AGENTS.md の check:docs の行と、本物の docs/QUALITY_SCORE.md の目標「文書が実物と合っている」の
+# 行を写して使う（名前の一覧を試験に二重に持たないため）
+AGENTS_DOCS_ROW="$(awk '/^## /{ on = ($0 == "## 検査のコマンド"); next } on && index($0, "| `npm run check:docs` |")' "$ROOT/AGENTS.md")"
+QUALITY_DOCS_ROW="$(awk '/^## /{ on = ($0 == "## 目標"); next } on && index($0, "| 文書が実物と合っている |") == 1' "$ROOT/docs/QUALITY_SCORE.md")"
+if [ -z "$AGENTS_DOCS_ROW" ] || [ -z "$QUALITY_DOCS_ROW" ]; then
+  echo "check-docs.test: NG: 本物の AGENTS.md か docs/QUALITY_SCORE.md から、検査 12 の対象の行を読み取れません" >&2
+  exit 1
+fi
+
+# 検査 13 を通る最小の不変条件と ESLint の設定（名前は 1 つずつ。読み取りの形は本物と同じ）
+MIN_INVARIANTS='## 不変条件
+
+1. 通信のための大域の名前（`fetch`。試験の見本）は、決まった層の外で使わない。
+2. 通信のためのモジュール（`http` と、それぞれに `node:` を付けた名前、`undici`）は、決まった層の外で import しない。'
+MIN_NET_CONSTS='const NETWORK_MODULE_BASES = ["http"];
+const NETWORK_MODULES = [...NETWORK_MODULE_BASES.flatMap((m) => [`node:${m}`, m]), "undici"];
+const NETWORK_GLOBALS = ["fetch"];'
+
+# AGENTS.md を書く。$1 = リポジトリ、$2 = 「## 検査のコマンド」の表の行。検査のコマンドの節は地図より前に置く
+# （地図の節が最後にあれば、末尾に足した行が地図の表の行になるため）
+write_agents() {
+  printf '%s\n' "# 試験" "" "ハーネスの版: 1" "" "## 検査のコマンド" "" "| 何を確かめるか | コマンド |" "|---|---|" "$2" "" \
+    "## 文書の地図" "" "| 種類 | パス |" "|---|---|" "| 計画の書式 | \`docs/PLANS.md\` |" > "$1/AGENTS.md"
+}
+
+# docs/QUALITY_SCORE.md を書く。$1 = リポジトリ、$2 = 「## 目標」の表の行
+write_quality() {
+  printf '%s\n' "# 品質目標" "" "## 目標" "" "| 目標 | 測る項目 | 確かめ方 | 検査の識別子 |" "|---|---|---|---|" "$2" > "$1/docs/QUALITY_SCORE.md"
+}
+
+# 検査 1〜7、12、13 を通る最小のリポジトリを作る
 make_base() {
   local d="$1" p
   mkdir -p "$d/docs/adr" "$d/docs/exec-plans/active" "$d/docs/exec-plans/completed" \
     "$d/docs/quality-eval/tasks" "$d/docs/quality-eval/results" "$d/scripts/harness" "$d/.github/workflows"
   cp "$CHECK" "$d/scripts/harness/check-docs.sh"
   cp "$PLANS" "$d/docs/PLANS.md"
-  printf '%s\n' "# 試験" "" "ハーネスの版: 1" "" "## 文書の地図" "" "| 種類 | パス |" "|---|---|" "| 計画の書式 | \`docs/PLANS.md\` |" > "$d/AGENTS.md"
+  write_agents "$d" "$AGENTS_DOCS_ROW"
+  write_quality "$d" "$QUALITY_DOCS_ROW"
   printf '@AGENTS.md\n' > "$d/CLAUDE.md"
-  printf '# ARCHITECTURE\n' > "$d/ARCHITECTURE.md"
+  printf '%s\n' "# ARCHITECTURE" "" "$MIN_INVARIANTS" > "$d/ARCHITECTURE.md"
+  printf '%s\n' "$MIN_NET_CONSTS" > "$d/eslint.config.mjs"
   printf '# ADR\n' > "$d/docs/adr/README.md"
-  for p in .gitignore docs/QUALITY_SCORE.md docs/quality-eval/README.md scripts/harness/check-arch.sh \
+  for p in .gitignore docs/quality-eval/README.md scripts/harness/check-arch.sh \
     scripts/harness/check-secrets.sh scripts/harness/check-secrets.mjs .dependency-cruiser.cjs .secretlintrc.json \
     .github/workflows/harness.yml .github/dependabot.yml; do
     : > "$d/$p"
@@ -865,14 +915,163 @@ run_case_on "2027-02-29" "古い計画: 基準の日が平年の 2 月 29 日" f
 
 setup_arch_templates_path_exists() {
   mkdir -p "$1/templates/module"
-  printf '%s\n' "# ARCHITECTURE" "" "ひな形の置き場は \`templates/module/\` である。" > "$1/ARCHITECTURE.md"
+  printf '%s\n' "" "ひな形の置き場は \`templates/module/\` である。" >> "$1/ARCHITECTURE.md"
 }
 setup_arch_templates_path_missing() {
-  printf '%s\n' "# ARCHITECTURE" "" "ひな形の置き場は \`templates/module/\` である。" > "$1/ARCHITECTURE.md"
+  printf '%s\n' "" "ひな形の置き場は \`templates/module/\` である。" >> "$1/ARCHITECTURE.md"
 }
 
 run_case "設計の正本: 書いた templates/ のパスが実在する" pass "" setup_arch_templates_path_exists
 run_case "設計の正本: 書いた templates/ のパスが無い" fail "ARCHITECTURE.md に書いたパス templates/module/ がありません" setup_arch_templates_path_missing
+
+# --- 検査 12: 文書の検査の一覧 ---
+
+# 2 つの文書の対象の行を書き換える（行は冒頭で本物から写したもの）。$1 = リポジトリ、$2 = AGENTS.md の行、$3 = docs/QUALITY_SCORE.md の行
+add_check_list_docs() {
+  write_agents "$1" "$2"
+  write_quality "$1" "$3"
+}
+
+# 行 $1 から、項目 $2（文書での書き方のまま。バッククォートも含める）を、前の「、」とともに消す。
+# 項目が見つからなければ行をそのまま出す（失敗を期待する場合が通り、試験が NG を出す）
+drop_name() {
+  awk -v s="、$2" '{ i = index($0, s); if (i) $0 = substr($0, 1, i - 1) substr($0, i + length(s)); print }' <<<"$1"
+}
+
+setup_list_correct() { add_check_list_docs "$1" "$AGENTS_DOCS_ROW" "$QUALITY_DOCS_ROW"; }
+# 出どころ 1 の形（TD-4）: docs/QUALITY_SCORE.md の測る項目だけが狭い
+setup_list_quality_narrow() {
+  add_check_list_docs "$1" "$AGENTS_DOCS_ROW" "$(drop_name "$QUALITY_DOCS_ROW" "古い計画")"
+}
+# AGENTS.md の表の行だけが狭い
+setup_list_agents_narrow() {
+  add_check_list_docs "$1" "$(drop_name "$AGENTS_DOCS_ROW" "受け入れ確認の記録")" "$QUALITY_DOCS_ROW"
+}
+# 出どころ 2 の形（PR #38）: 2 つの文書がそろって検査 7 の名前を欠く（2 つを比べるだけでは見つからない）
+setup_list_both_missing_check7() {
+  add_check_list_docs "$1" "$(drop_name "$AGENTS_DOCS_ROW" "ARCHITECTURE.md に書いたパス")" \
+    "$(drop_name "$QUALITY_DOCS_ROW" "\`ARCHITECTURE.md\` に書いたパス")"
+}
+# 名前はそろっているが順が違う
+setup_list_order() {
+  local row
+  row="$(awk '{ i = index($0, "地図、リンク"); if (i) $0 = substr($0, 1, i - 1) "リンク、地図" substr($0, i + length("地図、リンク")); print }' <<<"$AGENTS_DOCS_ROW")"
+  add_check_list_docs "$1" "$row" "$QUALITY_DOCS_ROW"
+}
+# 節はあるのに、check:docs の行が無い
+setup_list_agents_row_missing() {
+  add_check_list_docs "$1" "| 試験 | \`npm run test\` |" "$QUALITY_DOCS_ROW"
+}
+# CHECK_NAMES から名前を 1 つ消した（冒頭の一覧の検査の数と合わない）
+setup_list_names_short() {
+  add_check_list_docs "$1" "$AGENTS_DOCS_ROW" "$QUALITY_DOCS_ROW"
+  awk '$0 != "  \"古い計画\""' "$1/scripts/harness/check-docs.sh" > "$1/scripts/harness/check-docs.tmp"
+  mv "$1/scripts/harness/check-docs.tmp" "$1/scripts/harness/check-docs.sh"
+}
+
+run_case "文書の検査の一覧: 本物の 2 つの行（バッククォートの有無は問わない）" pass "" setup_list_correct
+run_case "文書の検査の一覧: docs/QUALITY_SCORE.md の測る項目だけが狭い" fail "docs/QUALITY_SCORE.md の「## 目標」の表の、目標が「文書が実物と合っている」の行の測る項目の括弧書き" setup_list_quality_narrow
+run_case "文書の検査の一覧: 欠けた名前を示す" fail "が、文書の検査の一覧と合いません（足りない名前: 古い計画）" setup_list_quality_narrow
+run_case "文書の検査の一覧: AGENTS.md の表の行だけが狭い" fail "AGENTS.md の「## 検査のコマンド」の表の、コマンドが \`npm run check:docs\` の行の括弧書き" setup_list_agents_narrow
+run_case "文書の検査の一覧: 2 つの文書がそろって検査 7 を欠く" fail "check-docs: 2 件の問題があります" setup_list_both_missing_check7
+run_case "文書の検査の一覧: 2 つの文書がそろって欠けた名前を示す" fail "（足りない名前: ARCHITECTURE.md に書いたパス）" setup_list_both_missing_check7
+run_case "文書の検査の一覧: 名前の順が違う" fail "（名前の順か区切りが違います）" setup_list_order
+run_case "文書の検査の一覧: 節はあるのに check:docs の行が無い" fail "\`npm run check:docs\` の行が 0 行あります（1 行のはず）" setup_list_agents_row_missing
+run_case "文書の検査の一覧: CHECK_NAMES の数が冒頭の一覧の検査の数と違う" fail "検査が 13 件なのに、CHECK_NAMES の名前が 12 件です" setup_list_names_short
+
+# 見出しを変えると、黙って調べなくなるのではなく失敗する
+setup_list_agents_heading_renamed() {
+  awk '{ if ($0 == "## 検査のコマンド") print "## 検査の命令"; else print }' "$1/AGENTS.md" > "$1/AGENTS.tmp"
+  mv "$1/AGENTS.tmp" "$1/AGENTS.md"
+}
+setup_list_quality_heading_renamed() {
+  awk '{ if ($0 == "## 目標") print "## 品質の目標"; else print }' "$1/docs/QUALITY_SCORE.md" > "$1/docs/QUALITY_SCORE.tmp"
+  mv "$1/docs/QUALITY_SCORE.tmp" "$1/docs/QUALITY_SCORE.md"
+}
+run_case "文書の検査の一覧: AGENTS.md の「## 検査のコマンド」の見出しを変えた" fail "AGENTS.md に「## 検査のコマンド」の見出しの行がありません" setup_list_agents_heading_renamed
+run_case "文書の検査の一覧: docs/QUALITY_SCORE.md の「## 目標」の見出しを変えた" fail "docs/QUALITY_SCORE.md に「## 目標」の見出しの行がありません" setup_list_quality_heading_renamed
+
+# --- 検査 13: 通信の名前の一覧 ---
+
+# 本物の ARCHITECTURE.md の「## 不変条件」の 1 と 2（見出しから 3 の前まで）と、本物の eslint.config.mjs の 3 つの定数の行を
+# 写して使う（読み取りの前提の書き方を、試験に二重に持たないため）。写した不変条件が書くパス（src/ports/ など）は、
+# 検査 7 を通すために作る（make_base の最小の不変条件と設定を置き換える）
+# 節の冒頭の注記（検査 13 が読み取ることの説明。同じ言い回しを含む）は写さず、見出しと 1・2 の項目だけを写す
+REAL_INVARIANTS="$(awk '/^## /{ on = ($0 == "## 不変条件"); if (on) print; next } on && /^1\. /{ items = 1 } on && /^3\. /{ exit } on && items' "$ROOT/ARCHITECTURE.md")"
+REAL_NET_CONSTS="$(grep -E '^const NETWORK_(MODULE_BASES|MODULES|GLOBALS) = ' "$ROOT/eslint.config.mjs" || true)"
+if [ -z "$REAL_INVARIANTS" ] || [ "$(printf '%s\n' "$REAL_NET_CONSTS" | awk 'END { print NR }')" -ne 3 ]; then
+  echo "check-docs.test: NG: 本物の ARCHITECTURE.md の不変条件か、eslint.config.mjs の 3 つの定数の行を読み取れません" >&2
+  exit 1
+fi
+
+# 文字列 $1 の中の、最初の $2 を $3 に置き換える。$2 が無ければそのまま出す（失敗を期待する場合が通り、試験が NG を出す）
+replace_once() {
+  awk -v from="$2" -v to="$3" 'BEGIN { RS = "\001" } { i = index($0, from); if (i) $0 = substr($0, 1, i - 1) to substr($0, i + length(from)); printf "%s", $0 }' <<<"$1"
+}
+
+# $1 = リポジトリ、$2 = 不変条件の節、$3 = eslint.config.mjs の中身
+add_net_files() {
+  mkdir -p "$1/src/ports" "$1/templates"
+  printf '%s\n' "# ARCHITECTURE" "" "$2" > "$1/ARCHITECTURE.md"
+  printf '%s\n' "$3" > "$1/eslint.config.mjs"
+}
+
+setup_net_correct() { add_net_files "$1" "$REAL_INVARIANTS" "$REAL_NET_CONSTS"; }
+setup_net_module_arch_only() {
+  add_net_files "$1" "$(replace_once "$REAL_INVARIANTS" '`dgram` と、' '`dgram`、`quic` と、')" "$REAL_NET_CONSTS"
+}
+setup_net_module_eslint_only() {
+  add_net_files "$1" "$REAL_INVARIANTS" "$(replace_once "$REAL_NET_CONSTS" '"undici"]' '"undici", "ws"]')"
+}
+setup_net_global_arch_only() {
+  add_net_files "$1" "$(replace_once "$REAL_INVARIANTS" '`XMLHttpRequest`、' '`XMLHttpRequest`、`WebTransport`、')" "$REAL_NET_CONSTS"
+}
+setup_net_global_eslint_only() {
+  add_net_files "$1" "$REAL_INVARIANTS" "$(replace_once "$REAL_NET_CONSTS" '"EventSource"]' '"EventSource", "WebTransport"]')"
+}
+# ARCHITECTURE.md の node: の書き方を変える（検査 13 の読み取りの前提が崩れる）
+setup_net_arch_wording() {
+  add_net_files "$1" "$(replace_once "$REAL_INVARIANTS" 'と、それぞれに `node:` を付けた名前、' 'と、その node: 付きの名前、')" "$REAL_NET_CONSTS"
+}
+# eslint.config.mjs の NETWORK_MODULES の組み立て方を変える（同上）
+setup_net_eslint_form() {
+  add_net_files "$1" "$REAL_INVARIANTS" "$(replace_once "$REAL_NET_CONSTS" '[...NETWORK_MODULE_BASES.flatMap(' '[...NETWORK_MODULE_BASES.map(')"
+}
+
+# 不変条件 2 を「それぞれに」と「`node:`」の間の空白で折り返す（続きの行は空白 1 つを挟んでつなぐので、読める）
+setup_net_fold_at_space() {
+  add_net_files "$1" "$(replace_once "$REAL_INVARIANTS" 'それぞれに `node:`' 'それぞれに\n   `node:`')" "$REAL_NET_CONSTS"
+}
+setup_net_no_eslint_config() { rm "$1/eslint.config.mjs"; }
+# 古い 1 行の宣言をブロックコメントの中に残し、本物の宣言を複数行にして名前を足す（コメントの中の古い宣言だけを拾って
+# 見逃さないこと）。$1 = リポジトリ、$2 = 定数の名前、$3 = 複数行にした本物の宣言（\n で改行）
+add_net_commented_old() {
+  local old
+  old="$(grep "^const $2 = " <<<"$REAL_NET_CONSTS")"
+  add_net_files "$1" "$REAL_INVARIANTS" "$(replace_once "$REAL_NET_CONSTS" "$old" "/*\n$old\n*/\n$3")"
+}
+setup_net_globals_commented_old() {
+  add_net_commented_old "$1" NETWORK_GLOBALS 'const NETWORK_GLOBALS = [\n  "fetch", "WebSocket", "XMLHttpRequest", "EventSource", "WebTransport",\n];'
+}
+setup_net_bases_commented_old() {
+  add_net_commented_old "$1" NETWORK_MODULE_BASES 'const NETWORK_MODULE_BASES = [\n  "http", "https", "http2", "net", "tls", "dgram", "quic",\n];'
+}
+
+run_case "通信の名前の一覧: 本物の不変条件と定数" pass "" setup_net_correct
+run_case "通信の名前の一覧: 不変条件 2 を「それぞれに」の後の空白で折り返しても読める" pass "" setup_net_fold_at_space
+run_case "通信の名前の一覧: eslint.config.mjs が無い" fail "eslint.config.mjs がありません（検査 13 が" setup_net_no_eslint_config
+run_case "通信の名前の一覧: NETWORK_GLOBALS の古い宣言をコメントに残し、本物を複数行にして名前を足す" fail "NETWORK_GLOBALS に値を入れる書き方（「NETWORK_GLOBALS =」。コメントの中を含む）が 2 か所" setup_net_globals_commented_old
+run_case "通信の名前の一覧: NETWORK_MODULE_BASES の古い宣言をコメントに残し、本物を複数行にして名前を足す" fail "NETWORK_MODULE_BASES に値を入れる書き方（「NETWORK_MODULE_BASES =」。コメントの中を含む）が 2 か所" setup_net_bases_commented_old
+run_case "通信の名前の一覧: ARCHITECTURE.md だけにモジュールがある" fail "通信のためのモジュールが合いません（ARCHITECTURE.md だけにある: node:quic、quic。eslint.config.mjs だけにある: なし）" setup_net_module_arch_only
+run_case "通信の名前の一覧: eslint.config.mjs だけにモジュールがある" fail "通信のためのモジュールが合いません（ARCHITECTURE.md だけにある: なし。eslint.config.mjs だけにある: ws）" setup_net_module_eslint_only
+run_case "通信の名前の一覧: ARCHITECTURE.md だけに大域の名前がある" fail "通信のための大域の名前が合いません（ARCHITECTURE.md だけにある: WebTransport。" setup_net_global_arch_only
+setup_net_base_eslint_only() {
+  add_net_files "$1" "$REAL_INVARIANTS" "$(replace_once "$REAL_NET_CONSTS" '"dgram"]' '"dgram", "quic"]')"
+}
+run_case "通信の名前の一覧: eslint.config.mjs の NETWORK_MODULE_BASES だけに名前がある" fail "eslint.config.mjs だけにある: node:quic、quic）" setup_net_base_eslint_only
+run_case "通信の名前の一覧: eslint.config.mjs だけに大域の名前がある" fail "eslint.config.mjs だけにある: WebTransport）" setup_net_global_eslint_only
+run_case "通信の名前の一覧: ARCHITECTURE.md の node: の書き方を変えると、黙って通らず失敗する" fail "に「と、それぞれに \`node:\` を付けた名前、」がありません" setup_net_arch_wording
+run_case "通信の名前の一覧: NETWORK_MODULES の組み立て方を変えると、黙って通らず失敗する" fail "eslint.config.mjs の NETWORK_MODULES の行が" setup_net_eslint_form
 
 total=$((passed + failed))
 if [ "$failed" -gt 0 ]; then

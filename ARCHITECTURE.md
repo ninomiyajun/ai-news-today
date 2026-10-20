@@ -57,6 +57,11 @@ import と、型だけの import も検出する）。モジュールの名前�
 
 ## 不変条件
 
+`npm run check:docs` は、下の 1 の「通信のための大域の名前（」から「。」までの名前と、2 の「通信のためのモジュール（」の
+括弧書きの名前（「と、それぞれに `node:` を付けた名前、」の前の名前を `node:` 付きと無しに展開し、後の名前をそのまま足す）を
+読み取って、`eslint.config.mjs` の名前の一覧と照合する。この言い回しと、バッククォートで囲んだ名前を「、」で区切る形を
+変えるときは、`scripts/harness/check-docs.sh` の検査 13 も直す。
+
 1. 外部への通信と現在時刻は、`src/ports/` からだけ得る。ほかの層は `HttpClient` と `Clock` を引数で受け取る。
    試験のときに、決まったデータ（`fixtureHttpClient`、`staticSource`）と決まった時刻（`fixedClock`）へ差し替えるため
    である。ESLint が、`src/ports/` の外での通信のための大域の名前（`fetch`、`WebSocket`、`XMLHttpRequest`、

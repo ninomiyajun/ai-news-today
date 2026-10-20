@@ -33,6 +33,22 @@ if [ -z "$START" ]; then
 fi
 TODAY="${HARNESS_TEST_TODAY:-$START}"
 
+# 文書の検査の検査 12 の対象の行（本物の AGENTS.md と docs/QUALITY_SCORE.md から写す。check-docs.test.sh と同じ）
+AGENTS_DOCS_ROW="$(awk '/^## /{ on = ($0 == "## 検査のコマンド"); next } on && index($0, "| `npm run check:docs` |")' "$ROOT/AGENTS.md")"
+QUALITY_DOCS_ROW="$(awk '/^## /{ on = ($0 == "## 目標"); next } on && index($0, "| 文書が実物と合っている |") == 1' "$ROOT/docs/QUALITY_SCORE.md")"
+if [ -z "$AGENTS_DOCS_ROW" ] || [ -z "$QUALITY_DOCS_ROW" ]; then
+  echo "notify.test: NG: 本物の AGENTS.md か docs/QUALITY_SCORE.md から、文書の検査の検査 12 の対象の行を読み取れません" >&2
+  exit 1
+fi
+# 文書の検査の検査 13 を通る最小の不変条件と ESLint の設定（check-docs.test.sh と同じ）
+MIN_INVARIANTS='## 不変条件
+
+1. 通信のための大域の名前（`fetch`。試験の見本）は、決まった層の外で使わない。
+2. 通信のためのモジュール（`http` と、それぞれに `node:` を付けた名前、`undici`）は、決まった層の外で import しない。'
+MIN_NET_CONSTS='const NETWORK_MODULE_BASES = ["http"];
+const NETWORK_MODULES = [...NETWORK_MODULE_BASES.flatMap((m) => [`node:${m}`, m]), "undici"];
+const NETWORK_GLOBALS = ["fetch"];'
+
 LOG="$TMP_ROOT/notify.log"
 ERR="$TMP_ROOT/stderr"
 STDIN_FILE="$TMP_ROOT/stdin"
@@ -62,11 +78,15 @@ write_base_files() {
   mkdir -p "$d/docs/adr" "$d/docs/exec-plans/active" "$d/docs/exec-plans/completed" "$d/docs/quality-eval/tasks" \
     "$d/docs/quality-eval/results" "$d/scripts/harness" "$d/.github/workflows" "$d/src"
   cp "$PLANS" "$d/docs/PLANS.md"
-  printf '%s\n' "# 試験" "" "ハーネスの版: 1" "" "## 文書の地図" "" "| 種類 | パス |" "|---|---|" "| 計画の書式 | \`docs/PLANS.md\` |" > "$d/AGENTS.md"
+  # 検査のコマンドの節は地図より前に置く（break_docs が末尾に足す行を、地図の表の行にするため）
+  printf '%s\n' "# 試験" "" "ハーネスの版: 1" "" "## 検査のコマンド" "" "| 何を確かめるか | コマンド |" "|---|---|" "$AGENTS_DOCS_ROW" "" \
+    "## 文書の地図" "" "| 種類 | パス |" "|---|---|" "| 計画の書式 | \`docs/PLANS.md\` |" > "$d/AGENTS.md"
+  printf '%s\n' "# 品質目標" "" "## 目標" "" "| 目標 | 測る項目 | 確かめ方 | 検査の識別子 |" "|---|---|---|---|" "$QUALITY_DOCS_ROW" > "$d/docs/QUALITY_SCORE.md"
   printf '@AGENTS.md\n' > "$d/CLAUDE.md"
-  printf '# ARCHITECTURE\n' > "$d/ARCHITECTURE.md"
+  printf '%s\n' "# ARCHITECTURE" "" "$MIN_INVARIANTS" > "$d/ARCHITECTURE.md"
+  printf '%s\n' "$MIN_NET_CONSTS" > "$d/eslint.config.mjs"
   printf '# ADR\n' > "$d/docs/adr/README.md"
-  for p in .gitignore docs/QUALITY_SCORE.md docs/quality-eval/README.md scripts/harness/check-arch.sh \
+  for p in .gitignore docs/quality-eval/README.md scripts/harness/check-arch.sh \
     scripts/harness/check-secrets.sh scripts/harness/check-secrets.mjs .dependency-cruiser.cjs .secretlintrc.json \
     .github/workflows/harness.yml .github/dependabot.yml docs/exec-plans/active/.gitkeep docs/exec-plans/completed/.gitkeep \
     docs/quality-eval/tasks/.gitkeep docs/quality-eval/results/.gitkeep src/.gitkeep; do

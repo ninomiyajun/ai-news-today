@@ -53,6 +53,26 @@
 #      受け入れ確認の記録は対象にしない。
 #      基準の日は、環境変数 HARNESS_TODAY（YYYY-MM-DD。試験用）があればその日、無ければ実行した日。
 #      HARNESS_TODAY が暦にある日付でなければ失敗にする
+#  12. 文書の検査の一覧（正本は下の CHECK_NAMES）。次の 2 つの括弧書きが、CHECK_NAMES の名前を同じ順に「、」でつないだものと
+#      一致する（バッククォートは除いて比べる）:
+#      - AGENTS.md の「## 検査のコマンド」の表の、コマンドが `npm run check:docs` の行の 1 列目「文書（…）」の括弧書き
+#      - docs/QUALITY_SCORE.md の「## 目標」の表の、目標が「文書が実物と合っている」の行の測る項目の「文書の検査の不整合（…）」の括弧書き
+#      あわせて、この冒頭の一覧の検査の番号が 1 から欠けずに並び、その数が CHECK_NAMES の数と同じであることを確かめる。
+#      AGENTS.md に「## 検査のコマンド」の見出しの行が無いとき、docs/QUALITY_SCORE.md に「## 目標」の見出しの行が無いときも
+#      失敗にする（見出しを変えると検査が黙って働かなくなるため。検査 3 の「## 文書の地図」と同じ扱い）
+#  13. 通信の名前の一覧。eslint.config.mjs が無いときも失敗にする（同上）。
+#      - ARCHITECTURE.md の「## 不変条件」の 2 の括弧書き「（`http`、…、`dgram` と、それぞれに `node:` を付けた名前、`undici`）」
+#        を、「と、それぞれに `node:` を付けた名前、」の前の名前（node: 付きと無しの両方に展開する）と後の名前に分けて読んだ
+#        名前の集まりが、eslint.config.mjs の NETWORK_MODULE_BASES を node: 付きと無しに展開し、NETWORK_MODULES の行の末尾に
+#        足した名前を加えた集まりと一致する
+#      - ARCHITECTURE.md の「## 不変条件」の 1 の「通信のための大域の名前（`fetch`、…、`EventSource`。」の名前の集まりが、
+#        eslint.config.mjs の NETWORK_GLOBALS と一致する
+#      不変条件の続きの行（字下げした行）は空白 1 つを挟んでつなぎ、連続する空白は 1 つにそろえてから読む（折り返しの位置が
+#      空白に来ても読めるようにするため）。
+#      eslint.config.mjs は実行せず、文字列として読む（この検査は早期通知からも動くので、ほかのファイルを実行しないため）。
+#      コメントは解析しないので、3 つの定数のそれぞれについて、値を入れる書き方（「名前 =」）がファイル全体（コメントの中を
+#      含む）でちょうど 1 か所で、それが行頭から始まる「const 名前 = 」の行であることも確かめる。
+#      読み取りの前提（ARCHITECTURE.md の上の書き方と、eslint.config.mjs の 3 つの定数の行の形）が崩れたときは、黙って通さずに失敗にする
 # 失敗したときは、項目ごとに直し方を表示して、終了コード 1 で終わる。
 set -euo pipefail
 export LC_ALL=C
@@ -86,11 +106,32 @@ else
     bad_root "--root の値が git の作業ツリーの根ではありません"
   fi
 fi
+# このスクリプト自身の絶対パス（検査 12 が冒頭の一覧を読む。下で検査する根へ移る前に決める）
+SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 cd -- "$ROOT"
 
 AGENTS_MAX_LINES=120
 # 進行中の計画を古いとみなす日数（検査 11）。変えるときは docs/PLANS.md の「置き場所と名前」も直す
 STALE_PLAN_DAYS=30
+# 検査の短い名前（検査 12）。番号の順に 1 行 1 つ（1 つ目が検査 1）。名前に「、」「（」「）」と「|」を使わない。
+# 文書の検査が何を確かめるかの一覧の正本はここだけで、AGENTS.md の検査のコマンドの表の check:docs の行と、
+# docs/QUALITY_SCORE.md の目標「文書が実物と合っている」の測る項目の括弧書きは、これを写したものにする。
+# 検査を足す・外すときは、冒頭の「確かめること」、ここ、2 つの文書の括弧書きを同じ変更で直す
+CHECK_NAMES=(
+  "必須のファイル"
+  "CLAUDE.md"
+  "地図"
+  "リンク"
+  "目録"
+  "行数"
+  "ARCHITECTURE.md に書いたパス"
+  "計画の必須の節"
+  "受け入れ確認の記録"
+  "製品の仕様の目録と状態"
+  "古い計画"
+  "文書の検査の一覧"
+  "通信の名前の一覧"
+)
 errors=0
 
 fail() {
@@ -961,6 +1002,266 @@ else
         "作業を進めたなら、$plan の「## 進捗」の節に、進めた日付（YYYY-MM-DD）の行を足す。終えたなら、「## 結果と振り返り」を書いて docs/exec-plans/completed/ へ移す。やめたなら、やめた理由を「## 結果と振り返り」に書いて docs/exec-plans/completed/ へ移す（docs/PLANS.md の「置き場所と名前」）"
     fi
   done
+fi
+
+# 12. 文書の検査の一覧（一覧の正本は CHECK_NAMES。比べる文書は冒頭の説明のとおり）
+CHECK_LIST_FIX="検査を足す・外すときは、scripts/harness/check-docs.sh の冒頭の「確かめること」と CHECK_NAMES、AGENTS.md の「検査のコマンド」の表の check:docs の行、docs/QUALITY_SCORE.md の「目標」の表の「文書が実物と合っている」の測る項目の 4 か所を同じ変更で直す"
+
+# 標準入力の行を「、」でつないで 1 行にする（paste -d は 1 バイトずつの区切りしか扱えないので awk で書く）
+join_names() {
+  awk 'NR > 1 { printf "、" } { printf "%s", $0 } END { if (NR > 0) printf "\n" }'
+}
+
+expected_names="$(printf '%s\n' "${CHECK_NAMES[@]}")"
+expected_list="$(printf '%s\n' "$expected_names" | join_names)"
+
+# 冒頭の「確かめること」の検査の番号（「#   1. 」「#  12. 」の形の行）が 1 から欠けずに並び、数が CHECK_NAMES と同じか
+header_numbers="$(awk 'NR == 1 { next } !/^#/ { exit } /^# +[0-9]+\. / { sub(/^# +/, ""); sub(/\..*$/, ""); print }' "$SELF")"
+header_count=0
+header_in_order=1
+while IFS= read -r n; do
+  [ -z "$n" ] && continue
+  header_count=$((header_count + 1))
+  [ "$n" = "$header_count" ] || header_in_order=0
+done <<EOF
+$header_numbers
+EOF
+if [ "$header_in_order" -eq 0 ]; then
+  fail "scripts/harness/check-docs.sh の冒頭の「確かめること」の検査の番号が、1 から欠けずに並んでいません（$(printf '%s\n' "$header_numbers" | tr '\n' ' ' | sed 's/ $//')）" \
+    "冒頭の一覧の番号を 1 から 1 ずつ増やす。$CHECK_LIST_FIX"
+elif [ "$header_count" -ne "${#CHECK_NAMES[@]}" ]; then
+  fail "scripts/harness/check-docs.sh の冒頭の「確かめること」の検査が $header_count 件なのに、CHECK_NAMES の名前が ${#CHECK_NAMES[@]} 件です" \
+    "CHECK_NAMES に、冒頭の一覧の検査ごとに短い名前を 1 つずつ、番号の順に書く。$CHECK_LIST_FIX"
+fi
+
+# $1 = 文書の場所の説明、$2 = 文書から読んだ括弧書き。CHECK_NAMES とバッククォートを除いて比べる
+compare_check_list() {
+  local where="$1" got="${2//\`/}" got_names missing extra detail
+  [ "$got" = "$expected_list" ] && return 0
+  got_names="$(printf '%s\n' "$got" | awk '{ n = split($0, a, "、"); for (i = 1; i <= n; i++) print a[i] }')"
+  missing="$(grep -vxF -- "$got_names" <<<"$expected_names" | join_names || true)"
+  extra="$(grep -vxF -- "$expected_names" <<<"$got_names" | join_names || true)"
+  detail=""
+  [ -n "$missing" ] && detail="足りない名前: $missing"
+  [ -n "$extra" ] && detail="${detail:+$detail。}余分な名前: $extra"
+  [ -z "$detail" ] && detail="名前の順か区切りが違います"
+  fail "${where}の括弧書き「$got」が、文書の検査の一覧と合いません（$detail）" \
+    "括弧書きを「$expected_list」にする（scripts/harness/check-docs.sh の CHECK_NAMES の名前を、同じ順に「、」でつなぐ。ファイル名にはバッククォートを付けてよい）。$CHECK_LIST_FIX"
+}
+
+# $1 = ファイル、$2 = 節の見出し。節の中の表の行を出す
+table_rows_in_section() {
+  awk -v sec="$2" '/^## /{ on = ($0 == sec); next } on && /^[[:space:]]*\|/' "$1"
+}
+
+# $1 = 表の行、$2 = 列の番号。前後の空白を除いた値を出す
+table_cell() {
+  awk -F '|' -v k="$(($2 + 1))" '{ c = $k; gsub(/^[[:space:]]+|[[:space:]]+$/, "", c); print c }' <<<"$1"
+}
+
+if [ -f AGENTS.md ] && ! grep -qxF '## 検査のコマンド' AGENTS.md; then
+  fail "AGENTS.md に「## 検査のコマンド」の見出しの行がありません" \
+    "AGENTS.md に、何を確かめるか・コマンドの表を持つ「## 検査のコマンド」の節を置く（見出しを変えると、検査 12 が check:docs の行を探せないため）。$CHECK_LIST_FIX"
+elif [ -f AGENTS.md ]; then
+  where='AGENTS.md の「## 検査のコマンド」の表の、コマンドが `npm run check:docs` の行'
+  rows="$(table_rows_in_section AGENTS.md '## 検査のコマンド' | awk -F '|' '{ c = $(NF - 1); gsub(/^[[:space:]]+|[[:space:]]+$/, "", c) } c == "`npm run check:docs`"')"
+  nrows="$(printf '%s' "$rows" | awk 'END { print NR }')"
+  if [ "$nrows" -ne 1 ]; then
+    fail "${where}が ${nrows} 行あります（1 行のはず）" \
+      "AGENTS.md の「## 検査のコマンド」の表に、「| 文書（…） | \`npm run check:docs\` |」の行をちょうど 1 行置く。$CHECK_LIST_FIX"
+  else
+    cell="$(table_cell "$rows" 1)"
+    case "$cell" in
+      文書（*）)
+        items="${cell#文書（}"
+        compare_check_list "$where" "${items%）}"
+        ;;
+      *)
+        fail "${where}の 1 列目「$cell」が「文書（…）」の形ではありません" \
+          "1 列目を「文書（$expected_list）」にする。$CHECK_LIST_FIX"
+        ;;
+    esac
+  fi
+fi
+
+if [ -f docs/QUALITY_SCORE.md ] && ! grep -qxF '## 目標' docs/QUALITY_SCORE.md; then
+  fail "docs/QUALITY_SCORE.md に「## 目標」の見出しの行がありません" \
+    "docs/QUALITY_SCORE.md に、目標・測る項目・確かめ方・検査の識別子の表を持つ「## 目標」の節を置く（見出しを変えると、検査 12 が測る項目を探せないため）。$CHECK_LIST_FIX"
+elif [ -f docs/QUALITY_SCORE.md ]; then
+  where='docs/QUALITY_SCORE.md の「## 目標」の表の、目標が「文書が実物と合っている」の行の測る項目'
+  rows="$(table_rows_in_section docs/QUALITY_SCORE.md '## 目標' | awk -F '|' '{ c = $2; gsub(/^[[:space:]]+|[[:space:]]+$/, "", c) } c == "文書が実物と合っている"')"
+  nrows="$(printf '%s' "$rows" | awk 'END { print NR }')"
+  if [ "$nrows" -ne 1 ]; then
+    fail "docs/QUALITY_SCORE.md の「## 目標」の表に、目標が「文書が実物と合っている」の行が ${nrows} 行あります（1 行のはず）" \
+      "「## 目標」の表に、その目標の行をちょうど 1 行置く。$CHECK_LIST_FIX"
+  else
+    cell="$(table_cell "$rows" 2)"
+    rest="${cell#*文書の検査の不整合（}"
+    if [ "$rest" = "$cell" ] || [ "${rest%%）*}" = "$rest" ]; then
+      fail "${where}に「文書の検査の不整合（…）」の形の括弧書きがありません" \
+        "測る項目を「文書の検査の不整合（$expected_list）と、…」の形にする。$CHECK_LIST_FIX"
+    else
+      compare_check_list "$where" "${rest%%）*}"
+    fi
+  fi
+fi
+
+# 13. 通信の名前の一覧（読み取りの前提は冒頭の説明のとおり）
+NET_FIX="通信の名前を足す・外すときは、ARCHITECTURE.md の不変条件（1 は通信のための大域の名前、2 は通信のためのモジュール）と、eslint.config.mjs の NETWORK_GLOBALS、NETWORK_MODULE_BASES（node: 付きと無しの両方に展開される）、NETWORK_MODULES の末尾の名前を、同じ変更で直す"
+NET_PREMISE_FIX="書き方を元に戻す。書き方を変えるなら、scripts/harness/check-docs.sh の検査 13 の読み取りを同じ変更で直す（検査 13 は決まった書き方を前提に読むので、前提が崩れると一致を確かめられないため）"
+
+# 標準入力のタブを空白にし、連続する空白を 1 つにそろえる
+squeeze_spaces() {
+  tr '\t' ' ' | tr -s ' '
+}
+
+# ARCHITECTURE.md の「## 不変条件」の番号 $1 の項目を、続きの行（字下げした行）の先頭の空白を除いて空白 1 つを挟んでつなぎ、
+# 連続する空白を 1 つにそろえて 1 行で出す
+invariant_text() {
+  outside_code_blocks ARCHITECTURE.md | awk -v n="$1" '
+    /^## / { on = ($0 == "## 不変条件"); cur = ""; next }
+    !on { next }
+    /^[0-9]+\. / { cur = substr($0, 1, index($0, ".") - 1); if (cur == n) printf "%s", $0; next }
+    /^[[:space:]]+[^[:space:]]/ { if (cur == n) { s = $0; sub(/^[[:space:]]+/, "", s); printf " %s", s }; next }
+    { cur = "" }
+    END { printf "\n" }' | squeeze_spaces
+}
+
+# 「、」で区切った、バッククォートで囲んだ名前の並び $1 から、名前を 1 行ずつ出す。形の違う項目は「BAD<TAB>項目」で出す
+backquoted_names() {
+  awk '{ n = split($0, a, "、"); for (i = 1; i <= n; i++) { s = a[i]; gsub(/^[[:space:]]+|[[:space:]]+$/, "", s)
+    if (s ~ /^`[^`]+`$/) print substr(s, 2, length(s) - 2); else print "BAD\t" s } }' <<<"$1"
+}
+
+# JavaScript の配列の中身（"a", "b"）$1 から、名前を 1 行ずつ出す。空の項目は飛ばし、形の違う項目は「BAD<TAB>項目」で出す
+quoted_names() {
+  awk '{ n = split($0, a, ","); for (i = 1; i <= n; i++) { s = a[i]; gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); if (s == "") continue
+    if (s ~ /^"[^"]+"$/) print substr(s, 2, length(s) - 2); else print "BAD\t" s } }' <<<"$1"
+}
+
+# 読み取った名前の並び $2 が空か、形の違う項目を含めば、$1（どこを読んだか）の前提の崩れとして失敗にし、0 を返す
+# （読み取れたら 1 を返す）。fail が errors を数えるので、コマンド置換の中では呼ばない
+names_unreadable() {
+  if [ -z "$2" ]; then
+    fail "${1}から、名前を 1 つも読み取れません" "$NET_PREMISE_FIX"
+    return 0
+  fi
+  if grep -q '^BAD	' <<<"$2"; then
+    fail "${1}に、名前の形でない項目があります（$(sed -n 's/^BAD	//p' <<<"$2" | join_names)）" "$NET_PREMISE_FIX"
+    return 0
+  fi
+  return 1
+}
+
+# $1 = 何の名前か、$2 = ARCHITECTURE.md の名前（1 行 1 つ）、$3 = eslint.config.mjs の名前、$4 = 不変条件の番号、$5 = 定数の名前
+compare_name_sets() {
+  local only_arch only_eslint
+  only_arch="$(grep -vxF -- "$3" <<<"$2" | sort -u | join_names || true)"
+  only_eslint="$(grep -vxF -- "$2" <<<"$3" | sort -u | join_names || true)"
+  [ -z "$only_arch$only_eslint" ] && return 0
+  fail "ARCHITECTURE.md の不変条件 $4 と eslint.config.mjs の $5 で、$1が合いません（ARCHITECTURE.md だけにある: ${only_arch:-なし}。eslint.config.mjs だけにある: ${only_eslint:-なし}）" \
+    "2 つを同じ名前の集まりにする。$NET_FIX"
+}
+
+# eslint.config.mjs の中で、名前 $1 に値を入れる書き方（「$1 =」。行頭の const の有無、コメントの中かを問わない）が、ちょうど
+# 1 か所で、それが行頭から始まる「const $1 = 」の行であることを確かめる。そうでなければ失敗にし、1 を返す。
+# JavaScript のコメントを解析せずに、コメントの中に古い 1 行の宣言を残して本物の宣言を複数行にする形を塞ぐため
+# （1 行の宣言だけを探すと、コメントの中の古い宣言を拾い、食い違いを見逃す）
+single_declaration() {
+  local n
+  n="$({ grep -oE "(^|[^A-Za-z0-9_\$])$1[[:space:]]*=([^=>]|\$)" eslint.config.mjs || true; } | awk 'END { print NR }')"
+  if [ "$n" -ne 1 ] || ! grep -qE "^const $1 = " eslint.config.mjs; then
+    fail "eslint.config.mjs に、$1 に値を入れる書き方（「$1 =」。コメントの中を含む）が $n か所あるか、行頭から始まる「const $1 = 」の行ではありません（1 か所で、その形のはず）" \
+      "$1 の宣言を、行頭から始まる「const $1 = …;」の 1 行だけにする（コメントの中に古い宣言を残さない）。$NET_PREMISE_FIX"
+    return 1
+  fi
+}
+
+# eslint.config.mjs の定数 $1 の行（「const $1 = [ … ];」の 1 行）の、角括弧の中身を CONST_INNER に入れる。
+# ちょうど 1 行でなければ失敗にし、1 を返す（fail が errors を数えるので、コマンド置換の中では呼ばない）
+const_inner() {
+  local lines n
+  CONST_INNER=""
+  single_declaration "$1" || return 1
+  lines="$(grep -E "^const $1 = \\[.*\\];\$" eslint.config.mjs || true)"
+  n="$(printf '%s' "$lines" | awk 'END { print NR }')"
+  if [ "$n" -ne 1 ]; then
+    fail "eslint.config.mjs に「const $1 = [ … ];」の 1 行が $n 行あります（1 行のはず）" "$NET_PREMISE_FIX"
+    return 1
+  fi
+  CONST_INNER="${lines#*\[}"
+  CONST_INNER="${CONST_INNER%\]*}"
+}
+
+if [ ! -f eslint.config.mjs ]; then
+  fail "eslint.config.mjs がありません（検査 13 が、通信の名前の一覧を ARCHITECTURE.md と照合できません）" \
+    "eslint.config.mjs を戻す。ESLint の設定の置き場を変えたなら、scripts/harness/check-docs.sh の検査 13 の読み取りを同じ変更で直す"
+else
+  NET_SEP="$(printf '%s\n' 'と、それぞれに `node:` を付けた名前、' | squeeze_spaces)"
+  NET_MODULES_RE='^const NETWORK_MODULES = \[\.\.\.NETWORK_MODULE_BASES\.flatMap\(\(m\) => \[`node:\$\{m\}`, m\]\)(, "[^"]+")*\];$'
+
+  # eslint.config.mjs の側（文字列として読む。実行しない）
+  eslint_modules=""
+  eslint_globals=""
+  if const_inner NETWORK_MODULE_BASES; then
+    bases="$(quoted_names "$CONST_INNER")"
+    if ! names_unreadable "eslint.config.mjs の NETWORK_MODULE_BASES " "$bases" && single_declaration NETWORK_MODULES; then
+      modules_line="$(grep -E '^const NETWORK_MODULES = ' eslint.config.mjs || true)"
+      if ! grep -qE "$NET_MODULES_RE" <<<"$modules_line" || [ "$(printf '%s\n' "$modules_line" | awk 'END { print NR }')" -ne 1 ]; then
+        fail "eslint.config.mjs の NETWORK_MODULES の行が、「const NETWORK_MODULES = [...NETWORK_MODULE_BASES.flatMap((m) => [\`node:\${m}\`, m]), \"名前\", …];」の 1 行の形ではありません" \
+          "$NET_PREMISE_FIX"
+      else
+        extras_part="${modules_line#*m\]\)}"
+        # 末尾の名前は、上の正規表現で「, "名前"」の並びだと確かめてある（無くてもよい）
+        extras="$(quoted_names "${extras_part%\];}")"
+        eslint_modules="$(printf '%s\n' "$bases" | awk '{ print "node:" $0; print }'; if [ -n "$extras" ]; then printf '%s\n' "$extras"; fi)"
+      fi
+    fi
+  fi
+  if const_inner NETWORK_GLOBALS; then
+    globals="$(quoted_names "$CONST_INNER")"
+    names_unreadable "eslint.config.mjs の NETWORK_GLOBALS " "$globals" || eslint_globals="$globals"
+  fi
+
+  # ARCHITECTURE.md の側
+  if [ -f ARCHITECTURE.md ]; then
+    item2="$(invariant_text 2)"
+    rest="${item2#*通信のためのモジュール（}"
+    inner="${rest%%）*}"
+    if [ "$rest" = "$item2" ] || [ "$inner" = "$rest" ]; then
+      fail "ARCHITECTURE.md の「## 不変条件」の 2 に「通信のためのモジュール（…）」の括弧書きがありません" "$NET_PREMISE_FIX"
+    else
+      case "$inner" in
+        *"$NET_SEP"*)
+          arch_bases="$(backquoted_names "${inner%%"$NET_SEP"*}")"
+          arch_extras="$(backquoted_names "${inner#*"$NET_SEP"}")"
+          if ! names_unreadable "ARCHITECTURE.md の不変条件 2 の括弧書きの「$NET_SEP」より前" "$arch_bases" \
+            && ! names_unreadable "ARCHITECTURE.md の不変条件 2 の括弧書きの「$NET_SEP」より後" "$arch_extras" \
+            && [ -n "$eslint_modules" ]; then
+            compare_name_sets "通信のためのモジュール" \
+              "$(printf '%s\n' "$arch_bases" | awk '{ print "node:" $0; print }'; printf '%s\n' "$arch_extras")" \
+              "$eslint_modules" 2 "NETWORK_MODULES"
+          fi
+          ;;
+        *)
+          fail "ARCHITECTURE.md の不変条件 2 の括弧書き「$inner」に「$NET_SEP」がありません（検査 13 は、この語の前の名前を node: 付きと無しに展開し、後の名前をそのまま足して読む）" \
+            "$NET_PREMISE_FIX"
+          ;;
+      esac
+    fi
+
+    item1="$(invariant_text 1)"
+    rest="${item1#*通信のための大域の名前（}"
+    inner="${rest%%。*}"
+    if [ "$rest" = "$item1" ] || [ "$inner" = "$rest" ]; then
+      fail "ARCHITECTURE.md の「## 不変条件」の 1 に「通信のための大域の名前（\`fetch\`、…。」の形の並びがありません" "$NET_PREMISE_FIX"
+    else
+      arch_globals="$(backquoted_names "$inner")"
+      if ! names_unreadable "ARCHITECTURE.md の不変条件 1 の通信のための大域の名前の並び" "$arch_globals" && [ -n "$eslint_globals" ]; then
+        compare_name_sets "通信のための大域の名前" "$arch_globals" "$eslint_globals" 1 "NETWORK_GLOBALS"
+      fi
+    fi
+  fi
 fi
 
 if [ "$errors" -gt 0 ]; then
