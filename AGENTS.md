@@ -76,6 +76,7 @@ ai-news-today（GitHub）に置く。現在は土台だけで、記事の取得�
 | 進行中の計画 | `docs/exec-plans/active/` | 作業を再開するとき |
 | 完了した計画 | `docs/exec-plans/completed/` | 過去の作業の経緯を知りたいとき |
 | 技術的負債の一覧 | `docs/exec-plans/tech-debt-tracker.md` | 作業の範囲外の問題を見つけたとき、文書を点検するとき |
+| 検査（スクリプトと試験の置き場、ESLint の設定、依存の規則の設定、検査を一式と CI につなぐ設定である `package.json` の check と test:harness、CI のワークフロー） | `scripts/harness/`、`eslint.config.mjs`、`.dependency-cruiser.cjs`、`package.json`、`.github/workflows/harness.yml` | 検査を足す・直すとき（指摘を検査にするときを含む） |
 | 検査の由来の記録 | `docs/harness-log.md` | 指摘を検査にするとき、検査の理由を知りたいとき |
 | 品質目標 | `docs/QUALITY_SCORE.md` | 設計の品質を判断するとき |
 | 定期の走査 | `.github/workflows/drift-scan.yml` | 文書を点検するとき（走査の結果の取得に使う） |
