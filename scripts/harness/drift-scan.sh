@@ -307,7 +307,7 @@ while IFS="$(printf '\t')" read -r stage code secs; do
 done <"$TMP/stage-results"
 
 # --- 項目 2 文書の鮮度
-# check-docs.sh の検査 7 の正規表現の写し（向こうを変えたら、ここも同じ変更で直す）
+# check-docs.sh の検査 7 の正規表現の写し（向こうを変えたら、ここも同じ変更で直す。一致は drift-scan.test.sh の試験「写し 1」が確かめる）
 CHECK7_RE='^(src|docs|scripts|\.github|templates)/|^[A-Za-z0-9._-]+\.(md|cjs|mjs|ts|json|yml)$'
 {
   echo "## 2 文書の鮮度"
