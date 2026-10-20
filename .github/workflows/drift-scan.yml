@@ -11,7 +11,7 @@ on:
     # 毎週月曜 00:23 UTC。遅れを減らすため、毎時の始まりを避ける（GitHub の文書の勧め）
     - cron: "23 0 * * 1"
   workflow_dispatch:
-  # 走査そのものと、走査が読む文書を変える pull request でだけ試す。
+  # 走査そのものと、走査が読む文書と設定を変える pull request でだけ試す。
   # pull_request_target にしない（フォークの pull request に書き込みの権限を渡さないため）。
   pull_request:
     paths:
@@ -22,6 +22,7 @@ on:
       - docs/exec-plans/tech-debt-tracker.md
       - AGENTS.md
       - package.json
+      - .secretlintrc.json
 
 permissions:
   contents: read
