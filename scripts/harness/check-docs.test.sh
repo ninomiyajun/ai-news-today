@@ -19,6 +19,8 @@
 # - scripts/harness/lint-rules.test.mjs の注釈の「通信のためのモジュール 13 個」の数と見本の選び方は確かめない
 #   （名前を増やしたときは、その注釈をレビューで人が直す）
 # - 定数の名前の一覧が、規則（no-restricted-imports など）で実際に使われているかは確かめない（lint-rules.test.mjs の見本が一部を守る）
+# - 宣言の後で定数の配列を書き換える形（NETWORK_MODULES.push("ws") など）は確かめない（宣言の行だけを読むため。書き換えで
+#   足した名前は、ARCHITECTURE.md に無くても通る）
 #
 # 検査 14 が受け持てない形（レビューで人が確かめる）:
 # - 人が確かめる決まりの数そのものが正しいか（docs/QUALITY_SCORE.md の決まり 1〜4 の対象と、層ごとの数が合っているか）は
@@ -1203,6 +1205,41 @@ setup_layer_two_tables() {
 setup_layer_in_code_block() {
   set_ratings "$1" "$(printf '%s\n' "## 現在の評価" "" '```' "$T2_HEAD" "$T2_SEP" '| `src/app/` | B | `lint` | 1 | 見本 | 2026-10-16 | c4b6083 |' '```')"
 }
+# 表 2 の直後に空行が無い形。GFM では、行頭の縦線を省いた行も、空行か別のブロックの始まりまでは表 2 の行として表示される
+T2_TAIL_ERR="表 2 の直後に空行がありません（縦線で始まらない行も、表 2 の行として表示されることがあります）"
+# 最後の 1 行の縦線を外して A にした
+setup_layer_tail_one_no_pipe_a() {
+  set_t2 "$1" "$T2_HEAD" "$T2_SEP" '| `src/app/` | B | `lint` | 4 | 見本 | 2026-10-16 | c4b6083 |' \
+    '`src/ui/` | A | `lint` | 4 | 見本 | 2026-10-16 | c4b6083'
+}
+# 最後の 2 行の縦線を外して A にした
+setup_layer_tail_two_no_pipe_a() {
+  set_t2 "$1" "$T2_HEAD" "$T2_SEP" '| `src/app/` | B | `lint` | 4 | 見本 | 2026-10-16 | c4b6083 |' \
+    '`src/ui/` | A | `lint` | 4 | 見本 | 2026-10-16 | c4b6083' '`src/ports/` | A | `lint` | 3 | 見本 | 2026-10-16 | c4b6083'
+}
+# 最後の 1 行の縦線を外したが、評価は B のまま（空行が無いことを理由に失敗する）
+setup_layer_tail_one_no_pipe_b() {
+  set_t2 "$1" "$T2_HEAD" "$T2_SEP" '| `src/app/` | B | `lint` | 4 | 見本 | 2026-10-16 | c4b6083 |' \
+    '`src/ui/` | B | `lint` | 4 | 見本 | 2026-10-16 | c4b6083'
+}
+# 最後の行の後に改ページ（\f）だけの行を挟み、その次に縦線の無い A の行（\f だけの行を空行とみなさないこと）
+setup_layer_tail_formfeed_then_a() {
+  set_t2 "$1" "$T2_HEAD" "$T2_SEP" '| `src/app/` | B | `lint` | 4 | 見本 | 2026-10-16 | c4b6083 |' \
+    "$(printf '\f')" '`src/ui/` | A | `lint` | 4 | 見本 | 2026-10-16 | c4b6083'
+}
+# 表 2 の直後に見出しが続く（表を終える行でも、空行を求めて失敗にする）
+setup_layer_tail_heading() {
+  set_t2 "$1" "$T2_HEAD" "$T2_SEP" '| `src/app/` | B | `lint` | 4 | 見本 | 2026-10-16 | c4b6083 |' '## 付録'
+}
+# 表 2 の後に空行を挟んで本文が続く
+setup_layer_tail_blank_then_text() {
+  set_t2 "$1" "$T2_HEAD" "$T2_SEP" '| `src/app/` | B | `lint` | 4 | 見本 | 2026-10-16 | c4b6083 |' '' '表の後の本文。'
+}
+# 表 1 の直後に空行の無い本文が続いても、検査 14 は表 1 を読まないので失敗にしない
+setup_layer_t1_tail_text() {
+  set_ratings "$1" "$(printf '%s\n' "## 現在の評価" "" "$T1_HEAD" '|---|---|---|---|---|---|' '| 見本 | A | `lint` | 見本 | 2026-10-16 | c4b6083 |' \
+    '表 1 の後の本文。' "" "$T2_HEAD" "$T2_SEP" '| `src/app/` | B | `lint` | 1 | 見本 | 2026-10-16 | c4b6083 |')"
+}
 
 run_case "層の評価の上限: 本物の表 2" pass "" setup_layer_real
 run_case "層の評価の上限: 決まりの数が 0 の層は A でよい" pass "" setup_layer_zero_a
@@ -1233,6 +1270,13 @@ run_case "層の評価の上限: 行の無い表 2 の後に表 1 がある" fai
 run_case "層の評価の上限: 全角空白を付けた見出しの節に表 2 と同じ見出しの表" fail "「## 現在の評価」の節の外に、見出しの行に「人が確かめる決まりの数」の列を持つ表があります" setup_layer_fullwidth_decoy
 run_case "層の評価の上限: 別の名前の節に表 2 と同じ見出しの表" fail "「## 現在の評価」の節の外に、見出しの行に「人が確かめる決まりの数」の列を持つ表があります" setup_layer_other_section
 run_case "層の評価の上限: 節の外のコードブロックの中の見本の表と見出しは数えない" pass "" setup_layer_sample_in_fence_outside
+run_case "層の評価の上限: 最後の 1 行の縦線を外して A にした" fail "$T2_TAIL_ERR: \`src/ui/\` | A |" setup_layer_tail_one_no_pipe_a
+run_case "層の評価の上限: 最後の 2 行の縦線を外して A にした" fail "$T2_TAIL_ERR: \`src/ui/\` | A |" setup_layer_tail_two_no_pipe_a
+run_case "層の評価の上限: 最後の 1 行の縦線を外し、評価は B のまま" fail "$T2_TAIL_ERR: \`src/ui/\` | B |" setup_layer_tail_one_no_pipe_b
+run_case "層の評価の上限: 最後の行の後に改ページだけの行を挟み、縦線の無い A の行" fail "$T2_TAIL_ERR" setup_layer_tail_formfeed_then_a
+run_case "層の評価の上限: 表 2 の直後に見出しが続く" fail "$T2_TAIL_ERR: ## 付録" setup_layer_tail_heading
+run_case "層の評価の上限: 表 2 の後に空行を挟んで本文が続く" pass "" setup_layer_tail_blank_then_text
+run_case "層の評価の上限: 表 1 の直後に空行の無い本文が続いても対象にしない" pass "" setup_layer_t1_tail_text
 
 # 写し T1: check-docs.sh の LAYER_T1_HEADER と、drift-scan.sh の T1_HEADER が同じ文字列である
 # （drift-scan.test.sh の試験「写し 1」と同じ形。どちらかで 1 つだけ取り出せないときも失敗にする）
