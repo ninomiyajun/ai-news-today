@@ -15,7 +15,7 @@
 | 層の依存の向きが `ARCHITECTURE.md` のとおり | 違反の件数（0 を保つ） | `npm run check:arch` | `check:arch` |
 | 外部と時刻を差し替えて試験できる | `src/ports/` の外での、通信のための大域の名前（`fetch` など）と現在時刻の使用と、通信のためのモジュール（`http`、`https`、`net` など。`ARCHITECTURE.md` の不変条件 2）の import（0 を保つ） | `npm run lint`（規則は `eslint.config.mjs`） | `lint` |
 | 秘匿値がリポジトリに無い | 検出の件数（0 を保つ） | `npm run check:secrets`（作業ツリー）と `npm run check:secrets:push`（push する範囲の各コミットの中身。CI も同じ検査をする） | `check:secrets`, `check:secrets:push` |
-| 文書が実物と合っている | 文書の検査の不整合（必須のファイル、`CLAUDE.md`、地図、リンク、目録、行数、計画の必須の節、受け入れ確認の記録、製品の仕様の目録と状態、古い計画）と、検査の試験の失敗（0 を保つ） | `npm run check:docs` と `npm run test:harness`（範囲は `AGENTS.md` の検査のコマンドの表） | `check:docs`, `test:harness` |
+| 文書が実物と合っている | 文書の検査の不整合（必須のファイル、`CLAUDE.md`、地図、リンク、目録、行数、`ARCHITECTURE.md` に書いたパス、計画の必須の節、受け入れ確認の記録、製品の仕様の目録と状態、古い計画）と、検査の試験の失敗（0 を保つ） | `npm run check:docs` と `npm run test:harness`（範囲は `AGENTS.md` の検査のコマンドの表） | `check:docs`, `test:harness` |
 | 整形・選別の振る舞いが試験で守られている | `src/curation/` と `src/services/` の試験が通る | `npm run test` | `test` |
 
 ## 現在の評価

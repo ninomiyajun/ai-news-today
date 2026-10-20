@@ -51,12 +51,12 @@ ai-news-today（GitHub）に置く。現在は土台だけで、記事の取得�
 | lint | `npm run lint` |
 | 型 | `npm run typecheck` |
 | 試験 | `npm run test` |
-| 文書（必須のファイル、CLAUDE.md、地図、リンク、目録、行数、計画の必須の節、受け入れ確認の記録、製品の仕様の目録と状態、古い計画） | `npm run check:docs` |
+| 文書（必須のファイル、CLAUDE.md、地図、リンク、目録、行数、ARCHITECTURE.md に書いたパス、計画の必須の節、受け入れ確認の記録、製品の仕様の目録と状態、古い計画） | `npm run check:docs` |
 | 検査の試験（文書の検査、早期通知、ESLint の規則が区画ごとに働くこと、ひな形と `src/` の間の依存の規則、定期の走査） | `npm run test:harness` |
 | 層の依存の向き、`src/` の直下の名前、ひな形（`templates/`）と `src/` の間の依存 | `npm run check:arch` |
 | 秘匿値（作業ツリーの、コミットする全ファイル） | `npm run check:secrets` |
 | 秘匿値（push する範囲の各コミットの中身） | `npm run check:secrets:push` |
-| 定期の走査と同じ走査を手元で行う（結果は報告するだけで、失敗にしない） | `npm run scan:drift -- --out <置き場>` |
+| 定期の走査と同じ走査を手元で行う（所見があっても失敗にしない。置き場は、無いか空のディレクトリを指定する） | `npm run scan:drift -- --out <置き場>` |
 | 手元で起動 | `npm run dev`（http://127.0.0.1:3000）。確認用のデータ（決まった記事と時刻。外部へ通信しない。画面に「確認用のデータで表示中」が出る）で起動するときは `AI_NEWS_FIXTURE=sample npm run dev -- -p <ポート>`（3000 は普段の起動に使うので、確認には 3100 以上を使う。`docs/adr/0004-fixture-data-for-acceptance.md`） |
 
 リンクの検査が見るのは、インラインのリンクと画像（角括弧の文字の直後に、丸括弧で囲んだ先を続ける形）で、先に空白も
