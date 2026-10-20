@@ -48,6 +48,12 @@ MIN_INVARIANTS='## 不変条件
 MIN_NET_CONSTS='const NETWORK_MODULE_BASES = ["http"];
 const NETWORK_MODULES = [...NETWORK_MODULE_BASES.flatMap((m) => [`node:${m}`, m]), "undici"];
 const NETWORK_GLOBALS = ["fetch"];'
+# 文書の検査の検査 14 を通る最小の表 2（check-docs.test.sh と同じ）
+MIN_RATINGS='## 現在の評価
+
+| 層 | 評価 | 検査の識別子 | 人が確かめる決まりの数 | 根拠 | 評価した日 | 評価したコミット |
+|---|---|---|---|---|---|---|
+| `src/app/` | B | `lint` | 1 | 試験の見本 | 2026-10-16 | c4b6083 |'
 
 LOG="$TMP_ROOT/notify.log"
 ERR="$TMP_ROOT/stderr"
@@ -81,7 +87,8 @@ write_base_files() {
   # 検査のコマンドの節は地図より前に置く（break_docs が末尾に足す行を、地図の表の行にするため）
   printf '%s\n' "# 試験" "" "ハーネスの版: 1" "" "## 検査のコマンド" "" "| 何を確かめるか | コマンド |" "|---|---|" "$AGENTS_DOCS_ROW" "" \
     "## 文書の地図" "" "| 種類 | パス |" "|---|---|" "| 計画の書式 | \`docs/PLANS.md\` |" > "$d/AGENTS.md"
-  printf '%s\n' "# 品質目標" "" "## 目標" "" "| 目標 | 測る項目 | 確かめ方 | 検査の識別子 |" "|---|---|---|---|" "$QUALITY_DOCS_ROW" > "$d/docs/QUALITY_SCORE.md"
+  printf '%s\n' "# 品質目標" "" "## 目標" "" "| 目標 | 測る項目 | 確かめ方 | 検査の識別子 |" "|---|---|---|---|" "$QUALITY_DOCS_ROW" "" \
+    "$MIN_RATINGS" > "$d/docs/QUALITY_SCORE.md"
   printf '@AGENTS.md\n' > "$d/CLAUDE.md"
   printf '%s\n' "# ARCHITECTURE" "" "$MIN_INVARIANTS" > "$d/ARCHITECTURE.md"
   printf '%s\n' "$MIN_NET_CONSTS" > "$d/eslint.config.mjs"

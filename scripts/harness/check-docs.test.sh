@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # check-docs.sh の試験（検査 7 の一部、検査 8、検査 9: 受け入れ確認の記録、検査 10: 製品の仕様、検査 11: 古い計画、
-# 検査 12: 文書の検査の一覧、検査 13: 通信の名前の一覧）。手元と CI で同じコマンドを使う:
+# 検査 12: 文書の検査の一覧、検査 13: 通信の名前の一覧、検査 14: 層の評価の上限）。手元と CI で同じコマンドを使う:
 # npm run test:harness
 #
 # 検査 12 が受け持てない形（レビューで人が確かめる）:
@@ -19,6 +19,13 @@
 # - scripts/harness/lint-rules.test.mjs の注釈の「通信のためのモジュール 13 個」の数と見本の選び方は確かめない
 #   （名前を増やしたときは、その注釈をレビューで人が直す）
 # - 定数の名前の一覧が、規則（no-restricted-imports など）で実際に使われているかは確かめない（lint-rules.test.mjs の見本が一部を守る）
+#
+# 検査 14 が受け持てない形（レビューで人が確かめる）:
+# - 人が確かめる決まりの数そのものが正しいか（docs/QUALITY_SCORE.md の決まり 1〜4 の対象と、層ごとの数が合っているか）は
+#   確かめない。数を 0 と書けば A にできるので、数を直す変更はレビューで人が確かめる
+# - 表 1（領域ごと）の評価と、評価と根拠の文章が合っているかは確かめない
+# - セルの中に「\|」（表の区切りでない縦線）を書くと、列の数が見出しと合わず、前提の崩れとして失敗する（誤検知だが、
+#   すり抜けではなく失敗する側に倒れる。scripts/harness/drift-scan.sh も同じく列の数の違いとして扱う）
 #
 # 場合ごとに、一時ディレクトリに小さなリポジトリ（git init だけ。コミットはしない）を作り、check-docs.sh の写しと
 # 本物の docs/PLANS.md の写し（検査 10 の場合は本物の docs/product-specs/README.md の写しも）を置いて、計画・記録・仕様の
@@ -74,6 +81,13 @@ MIN_NET_CONSTS='const NETWORK_MODULE_BASES = ["http"];
 const NETWORK_MODULES = [...NETWORK_MODULE_BASES.flatMap((m) => [`node:${m}`, m]), "undici"];
 const NETWORK_GLOBALS = ["fetch"];'
 
+# 検査 14 を通る最小の表 2（層は 1 つ。見出しの行は本物と同じ）
+MIN_RATINGS='## 現在の評価
+
+| 層 | 評価 | 検査の識別子 | 人が確かめる決まりの数 | 根拠 | 評価した日 | 評価したコミット |
+|---|---|---|---|---|---|---|
+| `src/app/` | B | `lint` | 1 | 試験の見本 | 2026-10-16 | c4b6083 |'
+
 # AGENTS.md を書く。$1 = リポジトリ、$2 = 「## 検査のコマンド」の表の行。検査のコマンドの節は地図より前に置く
 # （地図の節が最後にあれば、末尾に足した行が地図の表の行になるため）
 write_agents() {
@@ -81,12 +95,13 @@ write_agents() {
     "## 文書の地図" "" "| 種類 | パス |" "|---|---|" "| 計画の書式 | \`docs/PLANS.md\` |" > "$1/AGENTS.md"
 }
 
-# docs/QUALITY_SCORE.md を書く。$1 = リポジトリ、$2 = 「## 目標」の表の行
+# docs/QUALITY_SCORE.md を書く。$1 = リポジトリ、$2 = 「## 目標」の表の行、$3 = 「## 現在の評価」の節（省略時は MIN_RATINGS）
 write_quality() {
-  printf '%s\n' "# 品質目標" "" "## 目標" "" "| 目標 | 測る項目 | 確かめ方 | 検査の識別子 |" "|---|---|---|---|" "$2" > "$1/docs/QUALITY_SCORE.md"
+  printf '%s\n' "# 品質目標" "" "## 目標" "" "| 目標 | 測る項目 | 確かめ方 | 検査の識別子 |" "|---|---|---|---|" "$2" "" \
+    "${3-$MIN_RATINGS}" > "$1/docs/QUALITY_SCORE.md"
 }
 
-# 検査 1〜7、12、13 を通る最小のリポジトリを作る
+# 検査 1〜7、12〜14 を通る最小のリポジトリを作る
 make_base() {
   local d="$1" p
   mkdir -p "$d/docs/adr" "$d/docs/exec-plans/active" "$d/docs/exec-plans/completed" \
@@ -977,7 +992,7 @@ run_case "文書の検査の一覧: 2 つの文書がそろって検査 7 を欠
 run_case "文書の検査の一覧: 2 つの文書がそろって欠けた名前を示す" fail "（足りない名前: ARCHITECTURE.md に書いたパス）" setup_list_both_missing_check7
 run_case "文書の検査の一覧: 名前の順が違う" fail "（名前の順か区切りが違います）" setup_list_order
 run_case "文書の検査の一覧: 節はあるのに check:docs の行が無い" fail "\`npm run check:docs\` の行が 0 行あります（1 行のはず）" setup_list_agents_row_missing
-run_case "文書の検査の一覧: CHECK_NAMES の数が冒頭の一覧の検査の数と違う" fail "検査が 13 件なのに、CHECK_NAMES の名前が 12 件です" setup_list_names_short
+run_case "文書の検査の一覧: CHECK_NAMES の数が冒頭の一覧の検査の数と違う" fail "検査が 14 件なのに、CHECK_NAMES の名前が 13 件です" setup_list_names_short
 
 # 見出しを変えると、黙って調べなくなるのではなく失敗する
 setup_list_agents_heading_renamed() {
@@ -1072,6 +1087,171 @@ run_case "通信の名前の一覧: eslint.config.mjs の NETWORK_MODULE_BASES �
 run_case "通信の名前の一覧: eslint.config.mjs だけに大域の名前がある" fail "eslint.config.mjs だけにある: WebTransport）" setup_net_global_eslint_only
 run_case "通信の名前の一覧: ARCHITECTURE.md の node: の書き方を変えると、黙って通らず失敗する" fail "に「と、それぞれに \`node:\` を付けた名前、」がありません" setup_net_arch_wording
 run_case "通信の名前の一覧: NETWORK_MODULES の組み立て方を変えると、黙って通らず失敗する" fail "eslint.config.mjs の NETWORK_MODULES の行が" setup_net_eslint_form
+
+# --- 検査 14: 層の評価の上限 ---
+
+# 本物の docs/QUALITY_SCORE.md の「## 現在の評価」の節（見出しから末尾まで）を写して使う（表 2 の書き方を試験に二重に持たないため）
+REAL_RATINGS="$(awk '/^## /{ on = ($0 == "## 現在の評価") } on' "$ROOT/docs/QUALITY_SCORE.md")"
+if ! grep -qF '| `src/domain/` | B |' <<<"$REAL_RATINGS"; then
+  echo "check-docs.test: NG: 本物の docs/QUALITY_SCORE.md の「## 現在の評価」から、表 2 の層 src/domain/ の行を読み取れません" >&2
+  exit 1
+fi
+T2_HEAD='| 層 | 評価 | 検査の識別子 | 人が確かめる決まりの数 | 根拠 | 評価した日 | 評価したコミット |'
+T2_SEP='|---|---|---|---|---|---|---|'
+T1_HEAD='| 領域 | 評価 | 検査の識別子 | 根拠 | 評価した日 | 評価したコミット |'
+
+# 「## 現在の評価」の節を $2 にした docs/QUALITY_SCORE.md を書く。$1 = リポジトリ
+set_ratings() { write_quality "$1" "$QUALITY_DOCS_ROW" "$2"; }
+# 表 2 を、見出しの行 $2、区切りの行 $3、行 $4 以降で書く。$1 = リポジトリ
+set_t2() {
+  local d="$1" head="$2" sep="$3"
+  shift 3
+  set_ratings "$d" "$(printf '%s\n' "## 現在の評価" "" "$head" "$sep" "$@")"
+}
+
+setup_layer_real() { set_ratings "$1" "$REAL_RATINGS"; }
+# 元の決まりに反する形: 本物の表 2 で、決まりの数が 4 の層を A にした
+setup_layer_real_a() { set_ratings "$1" "$(replace_once "$REAL_RATINGS" '| `src/domain/` | B |' '| `src/domain/` | A |')"; }
+setup_layer_zero_a() { set_t2 "$1" "$T2_HEAD" "$T2_SEP" '| `src/app/` | A | `lint` | 0 | 見本 | 2026-10-16 | c4b6083 |'; }
+setup_layer_one_a() { set_t2 "$1" "$T2_HEAD" "$T2_SEP" '| `src/app/` | A | `lint` | 1 | 見本 | 2026-10-16 | c4b6083 |'; }
+# 列の順を変えても、見出しの名前で列を探す
+setup_layer_reordered() {
+  set_t2 "$1" '| 層 | 人が確かめる決まりの数 | 検査の識別子 | 評価 |' '|---|---|---|---|' \
+    '| `src/app/` | 0 | `lint` | A |' '| `src/ui/` | 2 | `lint` | A |'
+}
+# 表 1 の評価 A（決まりの数の列が無い表）は対象にしない
+setup_layer_table1_a() {
+  set_ratings "$1" "$(printf '%s\n' "## 現在の評価" "" "$T1_HEAD" '|---|---|---|---|---|---|' '| 見本 | A | `lint` | 見本 | 2026-10-16 | c4b6083 |' \
+    "" "$T2_HEAD" "$T2_SEP" '| `src/app/` | B | `lint` | 1 | 見本 | 2026-10-16 | c4b6083 |')"
+}
+# 表 2 の途中に空行があり、続きの行（A の行）が別の表になる（黙って読み飛ばさないこと）
+setup_layer_split_by_blank() {
+  set_ratings "$1" "$(printf '%s\n' "## 現在の評価" "" "$T2_HEAD" "$T2_SEP" '| `src/app/` | B | `lint` | 4 | 見本 | 2026-10-16 | c4b6083 |' \
+    "" '| `src/ui/` | A | `lint` | 4 | 見本 | 2026-10-16 | c4b6083 |')"
+}
+# 表 1 の見出しでも表 2 の見出しでもない表（列の少ない表 1 など）
+setup_layer_other_table() {
+  set_ratings "$1" "$(printf '%s\n' "## 現在の評価" "" '| 領域 | 評価 | 根拠 |' '|---|---|---|' '| 見本 | A | 見本 |' "" "$T2_HEAD" "$T2_SEP" \
+    '| `src/app/` | B | `lint` | 1 | 見本 | 2026-10-16 | c4b6083 |')"
+}
+setup_layer_two_count_columns() {
+  set_t2 "$1" '| 層 | 評価 | 人が確かめる決まりの数 | 人が確かめる決まりの数 |' '|---|---|---|---|' '| `src/app/` | A | 1 | 1 |'
+}
+# 正しい節の後に、末尾に空白 2 個を付けた同じ名前の見出しと、評価 A の表 2 を置く（後半を調べずに通さないこと）
+setup_layer_second_section_trailing_space() {
+  set_ratings "$1" "$(printf '%s\n' "## 現在の評価" "" "$T2_HEAD" "$T2_SEP" '| `src/app/` | B | `lint` | 1 | 見本 | 2026-10-16 | c4b6083 |' \
+    "" "## 現在の評価  " "" "$T2_HEAD" "$T2_SEP" '| `src/ui/` | A | `lint` | 1 | 見本 | 2026-10-16 | c4b6083 |')"
+}
+# 末尾に空白を付けた見出しだけでも、同じ節として読む（評価 A を見逃さないこと）
+setup_layer_trailing_space_only() {
+  set_ratings "$1" "$(printf '%s\n' "## 現在の評価  " "" "$T2_HEAD" "$T2_SEP" '| `src/ui/` | A | `lint` | 1 | 見本 | 2026-10-16 | c4b6083 |')"
+}
+# ~~~ のコードブロックの中に ``` だけの行を入れ、その後に評価 A の本物の表 2 を置く
+setup_layer_tilde_fence() {
+  set_ratings "$1" "$(printf '%s\n' "## 現在の評価" "" '~~~markdown' '```' '~~~' "" "$T2_HEAD" "$T2_SEP" \
+    '| `src/ui/` | A | `lint` | 1 | 見本 | 2026-10-16 | c4b6083 |')"
+}
+# 区切りの行の列の数が見出しより少ない
+setup_layer_separator_short() {
+  set_t2 "$1" "$T2_HEAD" '|---|---|---|' '| `src/app/` | B | `lint` | 1 | 見本 | 2026-10-16 | c4b6083 |'
+}
+# 区切りの行の途中のセルが区切りの書式でない
+setup_layer_separator_bad_cell() {
+  set_t2 "$1" "$T2_HEAD" '|---|X|---|---|---|---|---|' '| `src/app/` | B | `lint` | 1 | 見本 | 2026-10-16 | c4b6083 |'
+}
+# 表 2 は見出しと区切りの行だけで、空行の後に正しい表 1 がある
+setup_layer_empty_t2_then_t1() {
+  set_ratings "$1" "$(printf '%s\n' "## 現在の評価" "" "$T2_HEAD" "$T2_SEP" "" "$T1_HEAD" '|---|---|---|---|---|---|' \
+    '| 見本 | A | `lint` | 見本 | 2026-10-16 | c4b6083 |')"
+}
+# 名前の違う節（全角空白を付けた見出し、別の名前の節）に、表 2 と同じ見出しの、評価 A の表を置く
+setup_layer_fullwidth_decoy() {
+  set_ratings "$1" "$(printf '%s\n' "## 現在の評価" "" "$T2_HEAD" "$T2_SEP" '| `src/app/` | B | `lint` | 4 | 見本 | 2026-10-16 | c4b6083 |' \
+    "" "## 現在の評価　" "" "$T2_HEAD" "$T2_SEP" '| `src/ui/` | A | `lint` | 4 | 見本 | 2026-10-16 | c4b6083 |')"
+}
+setup_layer_other_section() {
+  set_ratings "$1" "$(printf '%s\n' "## 現在の評価" "" "$T2_HEAD" "$T2_SEP" '| `src/app/` | B | `lint` | 4 | 見本 | 2026-10-16 | c4b6083 |' \
+    "" "## 付録" "" "$T2_HEAD" "$T2_SEP" '| `src/ui/` | A | `lint` | 4 | 見本 | 2026-10-16 | c4b6083 |')"
+}
+# 節の外の囲みのコードブロックの中にある、表 2 と同じ見出しの見本の表と見出しは数えない
+setup_layer_sample_in_fence_outside() {
+  set_ratings "$1" "$(printf '%s\n' "## 書き方の見本" "" '~~~markdown' "## 現在の評価" "$T2_HEAD" "$T2_SEP" \
+    '| `src/ui/` | A | `lint` | 4 | 見本 | 2026-10-16 | c4b6083 |' '```' '~~~' "" "$MIN_RATINGS")"
+}
+# 見出しの直後が区切りの行でない（評価 A の行が見出しの直後にある）
+setup_layer_no_separator() {
+  set_ratings "$1" "$(printf '%s\n' "## 現在の評価" "" "$T2_HEAD" '| `src/app/` | A | `lint` | 4 | 見本 | 2026-10-16 | c4b6083 |')"
+}
+setup_layer_count_renamed() {
+  set_t2 "$1" '| 層 | 評価 | 検査の識別子 | 人が確かめる決まり | 根拠 | 評価した日 | 評価したコミット |' "$T2_SEP" \
+    '| `src/app/` | A | `lint` | 1 | 見本 | 2026-10-16 | c4b6083 |'
+}
+setup_layer_rating_renamed() {
+  set_t2 "$1" '| 層 | 評定 | 検査の識別子 | 人が確かめる決まりの数 | 根拠 | 評価した日 | 評価したコミット |' "$T2_SEP" \
+    '| `src/app/` | A | `lint` | 1 | 見本 | 2026-10-16 | c4b6083 |'
+}
+setup_layer_count_not_integer() { set_t2 "$1" "$T2_HEAD" "$T2_SEP" '| `src/app/` | A | `lint` | 4 つ | 見本 | 2026-10-16 | c4b6083 |'; }
+setup_layer_rating_bad() { set_t2 "$1" "$T2_HEAD" "$T2_SEP" '| `src/app/` | `A` | `lint` | 1 | 見本 | 2026-10-16 | c4b6083 |'; }
+setup_layer_column_count() { set_t2 "$1" "$T2_HEAD" "$T2_SEP" '| `src/app/` | A | `lint` | 1 | 見本 | 2026-10-16 |'; }
+setup_layer_no_rows() { set_t2 "$1" "$T2_HEAD" "$T2_SEP"; }
+setup_layer_no_section() { set_ratings "$1" ""; }
+setup_layer_two_tables() {
+  set_ratings "$1" "$(printf '%s\n' "## 現在の評価" "" "$T2_HEAD" "$T2_SEP" '| `src/app/` | B | `lint` | 1 | 見本 | 2026-10-16 | c4b6083 |' \
+    "" "$T2_HEAD" "$T2_SEP" '| `src/ui/` | A | `lint` | 1 | 見本 | 2026-10-16 | c4b6083 |')"
+}
+# コードブロックの中の表だけがある（数えないので、表 2 が無い）
+setup_layer_in_code_block() {
+  set_ratings "$1" "$(printf '%s\n' "## 現在の評価" "" '```' "$T2_HEAD" "$T2_SEP" '| `src/app/` | B | `lint` | 1 | 見本 | 2026-10-16 | c4b6083 |' '```')"
+}
+
+run_case "層の評価の上限: 本物の表 2" pass "" setup_layer_real
+run_case "層の評価の上限: 決まりの数が 0 の層は A でよい" pass "" setup_layer_zero_a
+run_case "層の評価の上限: 決まりの数の列の無い表の A は対象にしない" pass "" setup_layer_table1_a
+run_case "層の評価の上限: 本物の表 2 で、決まりの数が 4 の層を A にした" fail "表 2（層ごと）の層 \`src/domain/\` の評価が A なのに、人が確かめる決まりの数が 4 です" setup_layer_real_a
+run_case "層の評価の上限: 決まりの数が 1 の層を A にした" fail "の層 \`src/app/\` の評価が A なのに、人が確かめる決まりの数が 1 です" setup_layer_one_a
+run_case "層の評価の上限: 列の順を変えても見出しの名前で探す" fail "の層 \`src/ui/\` の評価が A なのに、人が確かめる決まりの数が 2 です" setup_layer_reordered
+run_case "層の評価の上限: 列の順を変えたとき、決まりの数が 0 の層は失敗にしない" fail "check-docs: 1 件の問題があります" setup_layer_reordered
+run_case "層の評価の上限: 決まりの数の列の名前を変えると、黙って通らず失敗する" fail "見出しの行に「人が確かめる決まりの数」の列を持つ表 2 がありません" setup_layer_count_renamed
+run_case "層の評価の上限: 評価の列の名前を変えると、黙って通らず失敗する" fail "表 2 の見出しの行に「評価」の列が 0 列あります（1 列のはず）" setup_layer_rating_renamed
+run_case "層の評価の上限: 決まりの数が整数でない" fail "の人が確かめる決まりの数「4 つ」が 0 以上の整数ではありません" setup_layer_count_not_integer
+run_case "層の評価の上限: 評価が A〜D の 1 字でない" fail "の評価「\`A\`」が A〜D の 1 字ではありません" setup_layer_rating_bad
+run_case "層の評価の上限: 行の列の数が見出しと違う" fail "表 2 の行の列の数が 6 です（見出しの行は 7 列）" setup_layer_column_count
+run_case "層の評価の上限: 表 2 に行が無い" fail "表 2 に層の行が 1 行もありません" setup_layer_no_rows
+run_case "層の評価の上限: 「## 現在の評価」の見出しが無い" fail "「## 現在の評価」の見出しの行がありません" setup_layer_no_section
+run_case "層の評価の上限: 表 2 が 2 つある" fail "列を持つ表が 2 個あります（表 2 の 1 個のはず）" setup_layer_two_tables
+run_case "層の評価の上限: 節の中のコードブロックは前提の崩れ" fail "「## 現在の評価」の節に、囲みのコードブロックの行（\`\`\` か ~~~）があります" setup_layer_in_code_block
+run_case "層の評価の上限: 表 2 の途中の空行で、A の行が別の表になる" fail "表 1 の見出しでも表 2 の見出しでもない表の行があります" setup_layer_split_by_blank
+run_case "層の評価の上限: 表 1 の見出しでない、決まりの数の列の無い表" fail "表 1 の見出しでも表 2 の見出しでもない表の行があります" setup_layer_other_table
+run_case "層の評価の上限: 決まりの数の列が 2 つある見出し" fail "表 2 の見出しの行に「人が確かめる決まりの数」の列が 2 列あります（1 列のはず）" setup_layer_two_count_columns
+run_case "層の評価の上限: 見出しの直後が区切りの行でない" fail "表 2 の見出しの直後の行が、見出しと同じ 7 列の区切りの行（|---|…）ではありません" setup_layer_no_separator
+run_case "層の評価の上限: 末尾に空白を付けた同じ名前の節が 2 つ目にある" fail "「## 現在の評価」の見出しの行が 2 行あります（1 行のはず）" setup_layer_second_section_trailing_space
+run_case "層の評価の上限: 末尾に空白を付けた見出しの節も読む" fail "の層 \`src/ui/\` の評価が A なのに、人が確かめる決まりの数が 1 です" setup_layer_trailing_space_only
+run_case "層の評価の上限: ~~~ のコードブロックの中の \`\`\` の行" fail "「## 現在の評価」の節に、囲みのコードブロックの行（\`\`\` か ~~~）があります: ~~~markdown" setup_layer_tilde_fence
+run_case "層の評価の上限: 区切りの行の列の数が足りない" fail "表 2 の見出しの直後の行が、見出しと同じ 7 列の区切りの行（|---|…）ではありません: |---|---|---|" setup_layer_separator_short
+run_case "層の評価の上限: 区切りの行の途中のセルが区切りの書式でない" fail "ではありません: |---|X|---|---|---|---|---|" setup_layer_separator_bad_cell
+run_case "層の評価の上限: 行の無い表 2 の後に表 1 がある" fail "表 2 に層の行が 1 行もありません" setup_layer_empty_t2_then_t1
+run_case "層の評価の上限: 全角空白を付けた見出しの節に表 2 と同じ見出しの表" fail "「## 現在の評価」の節の外に、見出しの行に「人が確かめる決まりの数」の列を持つ表があります" setup_layer_fullwidth_decoy
+run_case "層の評価の上限: 別の名前の節に表 2 と同じ見出しの表" fail "「## 現在の評価」の節の外に、見出しの行に「人が確かめる決まりの数」の列を持つ表があります" setup_layer_other_section
+run_case "層の評価の上限: 節の外のコードブロックの中の見本の表と見出しは数えない" pass "" setup_layer_sample_in_fence_outside
+
+# 写し T1: check-docs.sh の LAYER_T1_HEADER と、drift-scan.sh の T1_HEADER が同じ文字列である
+# （drift-scan.test.sh の試験「写し 1」と同じ形。どちらかで 1 つだけ取り出せないときも失敗にする）
+copy_name="写し T1: check-docs.sh の LAYER_T1_HEADER が、drift-scan.sh の T1_HEADER と同じ"
+docs_t1="$(sed -n "s/^LAYER_T1_HEADER='\([^']*\)'\$/\1/p" "$CHECK" || true)"
+scan_t1="$(sed -n "s/^T1_HEADER='\([^']*\)'\$/\1/p" "$ROOT/scripts/harness/drift-scan.sh" || true)"
+if [ -z "$docs_t1" ] || [ "$(printf '%s\n' "$docs_t1" | wc -l | tr -d ' ')" -ne 1 ]; then
+  echo "NG: $copy_name（check-docs.sh から LAYER_T1_HEADER を 1 つだけ取り出せない。LAYER_T1_HEADER='...' の 1 行の形を変えたら、この試験の取り出し方も直す）" >&2
+  failed=$((failed + 1))
+elif [ -z "$scan_t1" ] || [ "$(printf '%s\n' "$scan_t1" | wc -l | tr -d ' ')" -ne 1 ]; then
+  echo "NG: $copy_name（drift-scan.sh から T1_HEADER を 1 つだけ取り出せない。T1_HEADER='...' の 1 行の形を変えたら、この試験の取り出し方も直す）" >&2
+  failed=$((failed + 1))
+elif [ "$docs_t1" != "$scan_t1" ]; then
+  echo "NG: $copy_name（文字列が違う。check-docs.sh: $docs_t1／drift-scan.sh: $scan_t1。同じ変更で両方を同じにする）" >&2
+  failed=$((failed + 1))
+else
+  echo "ok: $copy_name"
+  passed=$((passed + 1))
+fi
 
 total=$((passed + failed))
 if [ "$failed" -gt 0 ]; then
