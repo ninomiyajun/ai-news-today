@@ -8,10 +8,13 @@ import nextTs from "eslint-config-next/typescript";
 // 別名を経由した書き方（const g = globalThis; g.fetch() など）は ESLint では止められない（ARCHITECTURE.md の不変条件）。
 const portsOnly = "src/ports/ の HttpClient と Clock を引数で受け取って使ってください（ARCHITECTURE.md の不変条件）。";
 // 通信のためのモジュール。fetch を禁じても、これらを使えば外部へ通信できるため、src/ports/ の外で import を禁じる。
+// npm run check:docs（scripts/harness/check-docs.sh の検査 13）は、NETWORK_MODULE_BASES、NETWORK_MODULES、NETWORK_GLOBALS の
+// 3 つの行を文字列として読み取り、ARCHITECTURE.md の不変条件 1 と 2 の名前と照合する。各行の 1 行の形（const 名前 = [ … ];）と、
+// NETWORK_MODULES の flatMap での組み立て方を変えるときは、scripts/harness/check-docs.sh の検査 13 も同じ変更で直す。
 const NETWORK_MODULE_BASES = ["http", "https", "http2", "net", "tls", "dgram"];
 const NETWORK_MODULES = [...NETWORK_MODULE_BASES.flatMap((m) => [`node:${m}`, m]), "undici"];
 const networkModulePattern = `/^(${NETWORK_MODULES.join("|")})$/`;
-// 通信のための大域の名前。
+// 通信のための大域の名前。npm run check:docs の検査 13 が読み取る（上の注記のとおり、1 行の形を保つ）。
 const NETWORK_GLOBALS = ["fetch", "WebSocket", "XMLHttpRequest", "EventSource"];
 const globalMessage = (name) => `${name} を直接使わないでください。${portsOnly}`;
 const networkMessage = `通信のためのモジュール（${NETWORK_MODULES.join("、")}）を src/ports/ の外で使わないでください。${portsOnly}`;
