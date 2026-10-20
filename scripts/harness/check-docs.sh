@@ -243,7 +243,8 @@ if [ -f AGENTS.md ]; then
 fi
 
 # 7. ARCHITECTURE.md に書いたパス
-# 下の正規表現は、scripts/harness/drift-scan.sh の CHECK7_RE に写しがある（変えるときは同じ変更で両方を直す）
+# 下の正規表現は、scripts/harness/drift-scan.sh の CHECK7_RE に写しがある（変えるときは同じ変更で両方を直す。
+# 一致は scripts/harness/drift-scan.test.sh の試験「写し 1」が確かめる）
 if [ -f ARCHITECTURE.md ]; then
   while IFS= read -r p; do
     [ -z "$p" ] && continue
