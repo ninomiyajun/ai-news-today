@@ -535,14 +535,14 @@ V2・V6〜V9 の「一時のリポジトリ」は、手順の節の「一時の�
 | V1 | 済 | 2026-10-26。`@87beb0d`、未コミットの変更を含めて確かめた。`git fetch --prune origin` の後の `npm run check` が終了コード 0。`check-docs: OK`、`--print checks` は本体の 13 個の後に追加の検査 3 つ、`test:harness` の 9 本がすべて期待どおり。出力は `~/.claude/harness-rollout/p9-evidence/c11/t-engine-after-npm-run-check.log` |
 | V2 | 済 | 2026-10-26。`@87beb0d`、未コミットの変更を含めて確かめた（一時のリポジトリに写した）。`check-docs.sh` が終了コード 1 で「写し scripts/harness/notify.sh の中身が合いません」。出力は `~/.claude/harness-rollout/p9-evidence/c11/t-engine-v2-v6.txt` |
 | V3 | 済 | 2026-10-26。`@87beb0d`、未コミットの変更を含めて確かめた。`HARNESS_COPIES_CMP_TAG=rules-2026.10.25-1` の `verify` が終了コード 0 で、写し 11 個と区画 2 つの 13 行すべてが「一致」。出力は `~/.claude/harness-rollout/p9-evidence/c11/t-engine-v3-verify.txt` |
-| V4 | 未 | |
+| V4 | 済 | 2026-10-26。`@90a71a7`（PR #45 の head）。GitHub Actions の実行 40213126335・40213145535（`harness` の `check` 2 つ）と 40213145557（`drift-scan` の `scan`） がすべて成功。`gh pr view 45 --json mergeable,mergeStateStatus` が `MERGEABLE`・`CLEAN` |
 | V5 | 済 | 2026-10-26。利用者が対応表 `~/.claude/harness-rollout/p9-evidence/c11/t-engine-c11-5-map.md` を確かめ、「この分け方でよい」と答えた（2026-10-25、会話 910f67f4 の発言番号 13）。前の 433 件のうち、どれにも当たらない項目は 0 件 |
 | V6 | 済 | 2026-10-26。`@87beb0d`、未コミットの変更を含めて確かめた（V2 と別の一時のリポジトリ）。`check-docs.sh` が終了コード 0、`verify`（版を固定しない）が終了コード 1 で `notify.sh` を「不一致」。出力は `~/.claude/harness-rollout/p9-evidence/c11/t-engine-v2-v6.txt` |
 | V7 | 済 | 2026-10-26。`@87beb0d`、未コミットの変更を含めて確かめた。`scripts/harness/harness-log-map.test.sh` が 4 件中 4 件期待どおり。出力は `~/.claude/harness-rollout/p9-evidence/c12/t-engine-v7-v9.txt` |
 | V8 | 済 | 2026-10-26。`@87beb0d`、未コミットの変更を含めて確かめた。`scripts/harness/harness-log-map.test.sh` が 4 件中 4 件期待どおり。出力は `~/.claude/harness-rollout/p9-evidence/c12/t-engine-v7-v9.txt` |
 | V9 | 済 | 2026-10-26。`@87beb0d`、未コミットの変更を含めて確かめた。`scripts/harness/harness-log-map.test.sh` が 4 件中 4 件期待どおり。出力は `~/.claude/harness-rollout/p9-evidence/c12/t-engine-v7-v9.txt` |
 | V10 | 済 | 2026-10-26。実装レビューの 1 段目（impl-reviewer・design-reviewer・security-reviewer）は重大 0、2 段目（Codex、gpt-6.1-sol）は重大 0・推奨 2・任意 1。採った 12 件を反映し、impl-reviewer の反映の後の確かめで合格。採らなかった 3 件は監督の会話への報告に書く。判断の記録の「手順 17 の 1 段目の指摘の反映」「手順 17 の 2 段目（Codex）の指摘の反映」の行 |
-| V11 | 未 | |
+| V11 | 済 | 2026-10-26。作業用のコミット `87beb0d` と本体のコミット `90a71a7` のそれぞれの直前に検索した。`90a71a7` の分は、個人情報の検索 0 件、秘匿値の形の当たりは検査のファイル名・規則の名前・説明の文・試験の見本の語だけで値は無し、`personal-info-scan.sh` の検出なし、`npm run check:secrets:push` で秘匿値なし、作者とコミッターは noreply の形。記録は `~/.claude/harness-rollout/p9-evidence/c21/t-engine-step18-commit-pre.txt` と `~/.claude/harness-rollout/p9-evidence/c21/t-engine-step5-commit-pre.txt`。閉じる変更のコミットの直前の検索は、まとめ役がそのコミットの前に行う |
 | 手順 1 | 済 | 2026-10-25。計画を起票し、設計レビューの 2 回目で指摘の解消を確かめた。U1〜U3 は利用者の決定（2026-10-25。判断の記録の「利用者の決定」の行）を反映した |
 | 手順 2 | 済 | 2026-10-25。`~/.claude/harness-rollout/p9-evidence/c11/t-engine-before-*`（試験ごとの `ok: ` の行 5 つ、vitest の件数、`npm run check` の出力、定期の走査の報告と出力）。`ac4555f` の出力から取った |
 | 手順 3 | 済 | 2026-10-25。`scripts/harness/harness.conf`（新規）と `docs/PLANS.md` を未コミットの変更として置いた。置いた後に `npm run check:docs` と `bash scripts/harness/check-docs.test.sh`（175 件中 175 件）が終了コード 0（未コミットの変更を含めて確かめた） |
@@ -560,9 +560,9 @@ V2・V6〜V9 の「一時のリポジトリ」は、手順の節の「一時の�
 | 手順 15 | 済 | 2026-10-26。対応表は `~/.claude/harness-rollout/p9-evidence/c11/t-engine-c11-5-map.md`。前の 433 件のうち、同じ名前で合格 188 件、期待の文言だけが違う同名 8 件、(i) 5 件、(ii) 42 件、(iii) 181 件、(iv) 9 件、どれにも当たらない 0 件。(i) の 5 件は新しい試験 `scripts/harness/project-config.test.sh` に足した（判断の記録の「手順 15」の行）。V5 は人が確かめる |
 | 手順 16 | 済 | 2026-10-26。V2・V3・V6・V7〜V9 の行のとおり |
 | 手順 17 | 済 | 2026-10-26。実装レビューの 1 段目（impl-reviewer・design-reviewer・security-reviewer）は重大 0、2 段目（Codex、gpt-6.1-sol）は重大 0・推奨 2・任意 1。採った 12 件を反映し、impl-reviewer の反映の後の確かめで合格。採らなかった 3 件は監督の会話への報告に書く。判断の記録の「手順 17 の 1 段目の指摘の反映」「手順 17 の 2 段目（Codex）の指摘の反映」の行 |
-| 手順 18 | 未 | |
-| 手順 19 | 未 | |
-| 手順 20 | 未 | |
+| 手順 18 | 済 | 2026-10-26。利用者の指示を受けて、まとめ役が本体のコミット `90a71a7`（38 ファイル）を作り、`origin/refactor/harness-engine-from-template` へ push し、PR #45（`main` 向け、題 `refactor: replace harness checks with template copies`）を作った。直前の検索の記録は `~/.claude/harness-rollout/p9-evidence/c21/t-engine-step18-commit-pre.txt`。利用者が PR #45 を 2026-10-25T16:54:49Z にマージした（マージのコミット `bb63a9b`。`gh pr view 45` で確かめた）。 |
+| 手順 19 | 済 | 2026-10-26。V4 のとおり（GitHub Actions の実行 40213126335・40213145535（`harness` の `check` 2 つ）と 40213145557（`drift-scan` の `scan`）。`MERGEABLE`・`CLEAN`、head `90a71a7`）。利用者が PR #45 を 2026-10-25T16:54:49Z にマージした（マージのコミット `bb63a9b`。`gh pr view 45` で確かめた）。 |
+| 手順 20 | 済 | 2026-10-26。照合の道具の `--require-done` と `--report` で残り 0・不備 0 を確かめ、結果と振り返りを書き、この計画を `docs/exec-plans/completed/` へ移した（未コミット）。計画は PR #45 のマージの前に閉じられなかった（閉じる準備の前に利用者がマージした）。閉じる変更は、マージの後の `main` から切った別のブランチの PR で入れる。閉じる変更のコミット・push と、閉じた後の CI は、まとめ役が利用者の指示を得てから行い、最終の報告に書く |
 
 - 2026-10-25: 計画を起票した（手順 1 の途中）。終えたこと: 計画のファイルを書いた。残り: 設計レビューと、未決 U1〜U3 の
   利用者の答え。未コミットの変更: この計画のファイル（新規）だけ。
@@ -593,6 +593,8 @@ V2・V6〜V9 の「一時のリポジトリ」は、手順の節の「一時の�
   行）。反映の後の `npm run check` は終了コード 0。手順 17 の残り: まとめ役による統合。
 - 2026-10-26: 手順 17 を終えた。利用者が対応表を確かめ（発言番号 13）、V5・V10 を済にした。利用者はコミット・push・PR の作成も
   指示した。次は手順 18（コミット・push・PR）。
+- 2026-10-26: 手順 18〜20 を終えた。PR #45 の CI がすべて成功し、`main` と競合しないことを確かめ、この計画を閉じた。
+  未コミットの変更: この計画のファイル（状態の表、進捗、結果と振り返り）と、`active/` から `completed/` への移動。
 
 ## 発見
 
@@ -837,3 +839,34 @@ V2・V6〜V9 の「一時のリポジトリ」は、手順の節の「一時の�
   変えないことなど。
 
 ## 結果と振り返り
+
+- このプロジェクトの検査の本体（文書の検査、早期通知、定期の走査と、それぞれの試験、秘匿値の検査）を、規約のひな形の正本
+  （版の印 `rules-2026.10.25-1`）の写しに置き換え、設定 `scripts/harness/harness.conf` と追加の検査の口 `scripts/harness/checks.d/` を
+  入れた。このプロジェクトだけの検査 12〜14 は、追加の検査 `check-list.sh`・`network-names.sh`・`layer-ratings.sh` に移した。
+  由来の記録の検査の試験 `harness-log-map.test.sh` と、このプロジェクトの値の試験 `project-config.test.sh` を足した。変更は
+  本体のコミット `90a71a7`（PR #45）にある。
+- 基準ごとの結果（どれも合格。根拠は進捗の状態の表の各行）:
+  - V1: `npm run check` が終了コード 0。
+  - V2: 写しを 1 行変えると、文書の検査が終了コード 1 で失敗した。
+  - V3: 比べる道具の `verify` が、写し 11 個と区画 2 つのすべてを「一致」と出した。
+  - V4: PR #45 の CI の 3 つの実行がすべて成功し、`main` と競合しない。
+  - V5: 置き換えの前の 433 件を、同じ名前で合格 188 件、期待の文言だけが違う同名 8 件、(i) 5 件、(ii) 42 件、(iii) 181 件、
+    (iv) 9 件に分け、どれにも当たらない項目は 0 件。利用者が対応表を確かめた。
+  - V6: 本体と冒頭のハッシュを一緒に変えた写しは、文書の検査を通り、`verify` で「不一致」になった。
+  - V7〜V9: `harness-log-map.test.sh` の 4 件がすべて期待どおり。
+  - V10: 実装レビューの 1 段目と 2 段目で重大な指摘は 0 件。採った 12 件を反映した。
+  - V11: 2 つのコミットの直前の検索で、個人情報と秘匿値は 0 件。作者とコミッターは noreply の形。
+- 設計判断は `docs/adr/0007-harness-engine-copies.md` に書いた。
+- 計画は PR #45 のマージの前に閉じられなかった（閉じる準備の前に利用者がマージした）。閉じる変更は、マージの後の `main` から切った別のブランチの PR で入れる。
+- 持ち越し（この作業では扱わず、P9 の監督の会話への報告にまとめ役が書く。規約の側の改善の候補と、P9 の計画の文の読み替えの依頼）:
+  - 実装レビューで採らなかった 3 件の指摘。`.codex/hooks.json` の `--exclude-standard`（規約のひな形と同じ形）と、
+    `check-secrets.mjs`・`notify.sh` の写しへの指摘（写しは手で変えない）。判断の記録の「手順 17 の 1 段目の指摘の反映」の行。
+  - 対応表の (iii) の 181 件。置き換えの前の試験にあり、同じ振る舞いが写しにあるのに、規約の正本の試験に項目が無いもの。
+    規約の正本の試験に足す作業の候補。
+  - 比べる道具の `update --apply` が、置き換えたファイルの実行の許可を保たない（発見の欄の「手順 8、手順 10 で気づいた」の行）。
+  - 初回の `update` で、道具が `docs/harness-log.md` に足した行の版の表記が「rules-2026.10.25-1 → rules-2026.10.25-1」と前後同じに
+    なる（発見の欄の「手順 8」の行）。
+  - TD-7（定期の走査が、縦線で始まらない行で表を閉じる）。写しなので、直すなら規約の正本で直す（判断の記録の「手順 13」の行）。
+  - 置き換えの前の検査 12 の後半（冒頭の一覧の検査の数と `CHECK_NAMES` の数の照合）。移さず、対応表の (iii) に入れた。
+  - P9 の計画の C11 (5) と C12 の文の読み替えの依頼。C11 (5) の「すべて合格」を「すべて合格か、根拠つきで対応づけた」と、C12 の
+    「`check-docs.test.sh` に足す」を「`scripts/harness/harness-log-map.test.sh` に置く」と読み替える（判断の記録の「利用者の決定」の行）。
