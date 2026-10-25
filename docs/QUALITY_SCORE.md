@@ -6,10 +6,11 @@
 検査の識別子は、`package.json` の `scripts` の名前そのもので、バッククォートで囲んだ識別子を、コンマと半角の空白 1 つで
 区切って書く。人が確かめるだけの行は `-` と書く。表 2 の層のセルは、バッククォートで囲んだパスで書く。「目標」の節の表と
 「現在の評価」の節の 2 つの表は、見出しの行の文字列と列の数を変えない（識別子と評価を機械的に読むため）。
-この文書は `scripts/harness/drift-scan.sh`（定期の走査）が読む。「現在の評価」の節（表 1 の見出しの行と表 2）は
-`scripts/harness/check-docs.sh` の検査 14 も読む。表の見出しの行や列を変えるときは、同じ変更で走査と検査 14 の両方を直す。
+この文書は `scripts/harness/drift-scan.sh`（定期の走査）が、表を見出しの列の名前で読む。「現在の評価」の節（表 1 の見出しの行と表 2）は
+`scripts/harness/checks.d/layer-ratings.sh` も読む。表の見出しの行や列を変えるときは、同じ変更で `layer-ratings.sh` を直し、
+走査が要る列（`scripts/harness/drift-scan.sh` の冒頭の説明の 4）を残す（走査は規約の正本の写しで、手で変えないため）。
 「現在の評価」の節の中には、囲みのコードブロックを置かない。表 2 の後に別の行を続けるときは、表 2 の最後の行の直後に空行を置く（ファイルが表 2 で終わるときは要らない。縦線で始まらない行が
-続くと、画面では表 2 の行として表示されうるため）。どちらも、検査 14 が前提の崩れとして失敗にする。
+続くと、画面では表 2 の行として表示されうるため）。どちらも、`scripts/harness/checks.d/layer-ratings.sh` が前提の崩れとして失敗にする。
 
 ## 目標
 
@@ -18,7 +19,7 @@
 | 層の依存の向きが `ARCHITECTURE.md` のとおり | 違反の件数（0 を保つ） | `npm run check:arch` | `check:arch` |
 | 外部と時刻を差し替えて試験できる | `src/ports/` の外での、通信のための大域の名前（`fetch` など）と現在時刻の使用と、通信のためのモジュール（`http`、`https`、`net` など。`ARCHITECTURE.md` の不変条件 2）の import（0 を保つ） | `npm run lint`（規則は `eslint.config.mjs`） | `lint` |
 | 秘匿値がリポジトリに無い | 検出の件数（0 を保つ） | `npm run check:secrets`（作業ツリー）と `npm run check:secrets:push`（push する範囲の各コミットの中身。CI も同じ検査をする） | `check:secrets`, `check:secrets:push` |
-| 文書が実物と合っている | 文書の検査の不整合（必須のファイル、`CLAUDE.md`、地図、リンク、目録、行数、`ARCHITECTURE.md` に書いたパス、計画の必須の節、受け入れ確認の記録、製品の仕様の目録と状態、古い計画、文書の検査の一覧、通信の名前の一覧、層の評価の上限）と、検査の試験の失敗（0 を保つ） | `npm run check:docs` と `npm run test:harness`（範囲は `AGENTS.md` の検査のコマンドの表） | `check:docs`, `test:harness` |
+| 文書が実物と合っている | 文書の検査の不整合（必須のファイル、`CLAUDE.md`、地図、リンク、目録、行数、`ARCHITECTURE.md` に書いたパス、計画の必須の節、受け入れ確認の記録、製品の仕様の目録と状態、古い計画、検査の由来の記録、写しの中身、文書の検査の一覧、層の評価の上限、通信の名前の一覧）と、検査の試験の失敗（0 を保つ） | `npm run check:docs` と `npm run test:harness`（範囲は `AGENTS.md` の検査のコマンドの表） | `check:docs`, `test:harness` |
 | 整形・選別の振る舞いが試験で守られている | `src/curation/` と `src/services/` の試験が通る | `npm run test` | `test` |
 
 ## 現在の評価
@@ -60,7 +61,7 @@
 
 層の評価は、目標の表の目標のうち、その層に当たるものについて、上の段階で付ける。試験の目標の対象は `src/curation/` と
 `src/services/` だけである。人が確かめる決まりの数が 1 以上の層は、`A` にしない
-（`npm run check:docs` の検査 14 が、この表の「評価」と「人が確かめる決まりの数」の列を見出しの名前で探して確かめる）。
+（`npm run check:docs` の `scripts/harness/checks.d/layer-ratings.sh` が、この表の「評価」と「人が確かめる決まりの数」の列を見出しの名前で探して確かめる）。
 
 | 層 | 評価 | 検査の識別子 | 人が確かめる決まりの数 | 根拠 | 評価した日 | 評価したコミット |
 |---|---|---|---|---|---|---|

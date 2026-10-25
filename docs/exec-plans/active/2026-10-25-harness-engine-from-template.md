@@ -371,6 +371,8 @@ V2・V6〜V9 の「一時のリポジトリ」は、手順の節の「一時の�
    `ci-harness.yml` と `parts/node-secrets/assets/ci-secrets.yml` と `.github/workflows/harness.yml`、
    `parts/node-secrets/assets/secretlintrc.json` と `.secretlintrc.json`。差ごとに、取り込むか（取り込むなら手順 11・13 のどこで）と
    理由を判断の記録に書く。取り込むと決めた差は、この計画の手順 11・13 の箇条に足してから進む。
+   `claude-settings.json` と `.claude/settings.json` の組の、早期通知の `command` の引用符の位置の差は、取り込むと決めてある
+   （手順 11。理由は判断の記録の「`.claude/settings.json` の書き方」の行）。
 
 10. **T の検査 12〜14 を追加の検査の口へ移す。** 今の `check-docs.sh`（置き換えの前のもの。`git show ac4555f:scripts/harness/check-docs.sh`
     で読む）の次の部分を、それぞれ 1 つのファイルにする。各ファイルは K の `checks.d/README.md` の決まり（2 行目以降に
@@ -407,10 +409,15 @@ V2・V6〜V9 の「一時のリポジトリ」は、手順の節の「一時の�
     - `scripts/harness/notify-paths.mjs` を消す（K の `notify.sh` は入力の変換を perl で行い、このファイルを使わない。K の
       `assets/harness/notify.sh` 22 行）。
     - `.codex/hooks.json` を、K の `assets/codex-hooks.json` と同じ確かめ（`notify-paths.mjs` の有無を確かめる箇所を外し、
-      `scripts/harness/` に除外されていない未追跡のファイルが無いことの確かめを足す）に直す。直さないと、マージの後に
+      `scripts/harness/` に除外されていない未追跡のファイルが無いことの確かめを足す）に直す。`command` は K のひな形の値を
+      そのまま使う（手順 9 で見つけた、最初の `git worktree list` に `-c core.fsmonitor=false` を付ける差も含む）。直さないと、マージの後に
       Codex の早期通知が「起動の前の確かめが成り立ちません」で常に動かなくなる（今の `.codex/hooks.json` が
-      `HEAD:scripts/harness/notify-paths.mjs` の存在を確かめるため）。`.claude/settings.json` は、呼び方が同じ
-      （`notify.sh claude`）なので変えない（手順 9 で差を取り込むと決めたものを除く）。
+      `HEAD:scripts/harness/notify-paths.mjs` の存在を確かめるため）。
+    - `.claude/settings.json` の早期通知の `command`（今の 15 行 `"/bin/bash \"$CLAUDE_PROJECT_DIR\"/scripts/harness/notify.sh claude"`）を、
+      K のひな形 `assets/claude-settings.json` 9 行と同じ書き方 `"/bin/bash \"$CLAUDE_PROJECT_DIR/scripts/harness/notify.sh\" claude"` に
+      直す（引用符を、パスの全体を囲む位置へ移す）。K の写しの `notify.test.sh` 279 行の項目「11: .claude/settings.json が notify.sh
+      claude を呼ぶ」は、`grep -qF 'scripts/harness/notify.sh\" claude'` でこの書き方を探すので、直さないと置き換えの後にこの項目が
+      失敗し、`npm run test:harness` と CI の `harness` が止まる。`permissions` の行はこのプロジェクトのものを残す。
     - `docs/adr/0005-early-notify-hooks.md` の本文は変えない。`docs/adr/README.md` の目録の 0005 の状態を「採用（実行するプログラムの
       範囲は 0007 で置換）」にし、0005 の「結果と限界」の節の末尾に、実行するプログラムの範囲は 0007 で置き換えたことを示す
       注記を 1 行足す（0001 と 0002 の前例と同じ扱い）。
@@ -429,7 +436,10 @@ V2・V6〜V9 の「一時のリポジトリ」は、手順の節の「一時の�
     - `.github/workflows/harness.yml`: 段の順（秘匿値の検査の 2 段を、ほかのスクリプトより先）と `permissions: contents: read` は
       変えない。変えるのは `test-harness` の段の名前の括弧書き（段の読み取りの試験と、由来の記録の試験を足す）と、
       手順 9 で取り込むと決めた差だけ。K の `assets/ci-harness.yml` と部品の `ci-secrets.yml` のファイルは置かない（棚卸しの表の
-      CI の行）。
+      CI の行）。手順 9 で取り込むと決めた差: 取得の段の `fetch-depth: 0` の注釈に、本体の検査 12 が分岐元との merge-base を
+      求めるためでもあることを足す（K の `ci-harness.yml` の同じ箇所の注釈。値は今も 0 なので変えない）。
+    - `.secretlintrc.json`: 手順 9 で取り込むと決めた差。`Anthropic OAuth token` の規則の `pattern` を、K の部品のひな形
+      `parts/node-secrets/assets/secretlintrc.json` と同じ `(?:sk-ant-oat)` で囲んだ形にする（意味は変わらない）。
     - `.github/workflows/drift-scan.yml`: pull request の `paths` の `scripts/harness/drift-scan.sh` と `drift-scan.test.sh` の 2 行を
       `scripts/harness/**` にする（K の `drift-scan.sh` は `stack-adapter.sh`・`check-docs.sh --print arch-path-re`・
       `check-secrets.sh --file`・設定のファイルを使うので、それらの変更でも走査を試すため。K の部品のひな形 `drift-scan.yml` と
@@ -462,6 +472,7 @@ V2・V6〜V9 の「一時のリポジトリ」は、手順の節の「一時の�
     - `docs/harness-log.md` の記録の表に、次の行を足す（`update` が足した 1 行に加えて）: T の検査 12〜14 を追加の検査の口へ移した
       行（3 つの検査ごとに 1 行。元の行の「外した変更」の列に、この変更で本体から外したことを書く）、早期通知の付け替え
       （`notify-paths.mjs` を消した）の行、由来の記録の試験を足した行。
+    - ADR 0005 の「結果と限界」の末尾の注記（手順 11 で足した）の「0007」を、`0007-harness-engine-copies.md` へのリンクにする。
     - 新しい ADR `docs/adr/0007-harness-engine-copies.md` を書き、`docs/adr/README.md` の目録に足す。内容:
       - 検査の本体を K の正本の写しにしたこと、設定と追加の検査の口の分け方、写しを手で変えないこと、更新は K の
         `harness-copies.sh update` で行うこと、`claude_md_exact=yes` を保つこと。
@@ -521,34 +532,34 @@ V2・V6〜V9 の「一時のリポジトリ」は、手順の節の「一時の�
 
 | 項目 | 状態 | 根拠 |
 |---|---|---|
-| V1 | 未 | |
-| V2 | 未 | |
-| V3 | 未 | |
+| V1 | 済 | 2026-10-26。`@87beb0d`、未コミットの変更を含めて確かめた。`git fetch --prune origin` の後の `npm run check` が終了コード 0。`check-docs: OK`、`--print checks` は本体の 13 個の後に追加の検査 3 つ、`test:harness` の 9 本がすべて期待どおり。出力は `~/.claude/harness-rollout/p9-evidence/c11/t-engine-after-npm-run-check.log` |
+| V2 | 済 | 2026-10-26。`@87beb0d`、未コミットの変更を含めて確かめた（一時のリポジトリに写した）。`check-docs.sh` が終了コード 1 で「写し scripts/harness/notify.sh の中身が合いません」。出力は `~/.claude/harness-rollout/p9-evidence/c11/t-engine-v2-v6.txt` |
+| V3 | 済 | 2026-10-26。`@87beb0d`、未コミットの変更を含めて確かめた。`HARNESS_COPIES_CMP_TAG=rules-2026.10.25-1` の `verify` が終了コード 0 で、写し 11 個と区画 2 つの 13 行すべてが「一致」。出力は `~/.claude/harness-rollout/p9-evidence/c11/t-engine-v3-verify.txt` |
 | V4 | 未 | |
-| V5 | 未 | |
-| V6 | 未 | |
-| V7 | 未 | |
-| V8 | 未 | |
-| V9 | 未 | |
-| V10 | 未 | |
+| V5 | 済 | 2026-10-26。利用者が対応表 `~/.claude/harness-rollout/p9-evidence/c11/t-engine-c11-5-map.md` を確かめ、「この分け方でよい」と答えた（2026-10-25、会話 910f67f4 の発言番号 13）。前の 433 件のうち、どれにも当たらない項目は 0 件 |
+| V6 | 済 | 2026-10-26。`@87beb0d`、未コミットの変更を含めて確かめた（V2 と別の一時のリポジトリ）。`check-docs.sh` が終了コード 0、`verify`（版を固定しない）が終了コード 1 で `notify.sh` を「不一致」。出力は `~/.claude/harness-rollout/p9-evidence/c11/t-engine-v2-v6.txt` |
+| V7 | 済 | 2026-10-26。`@87beb0d`、未コミットの変更を含めて確かめた。`scripts/harness/harness-log-map.test.sh` が 4 件中 4 件期待どおり。出力は `~/.claude/harness-rollout/p9-evidence/c12/t-engine-v7-v9.txt` |
+| V8 | 済 | 2026-10-26。`@87beb0d`、未コミットの変更を含めて確かめた。`scripts/harness/harness-log-map.test.sh` が 4 件中 4 件期待どおり。出力は `~/.claude/harness-rollout/p9-evidence/c12/t-engine-v7-v9.txt` |
+| V9 | 済 | 2026-10-26。`@87beb0d`、未コミットの変更を含めて確かめた。`scripts/harness/harness-log-map.test.sh` が 4 件中 4 件期待どおり。出力は `~/.claude/harness-rollout/p9-evidence/c12/t-engine-v7-v9.txt` |
+| V10 | 済 | 2026-10-26。実装レビューの 1 段目（impl-reviewer・design-reviewer・security-reviewer）は重大 0、2 段目（Codex、gpt-6.1-sol）は重大 0・推奨 2・任意 1。採った 12 件を反映し、impl-reviewer の反映の後の確かめで合格。採らなかった 3 件は監督の会話への報告に書く。判断の記録の「手順 17 の 1 段目の指摘の反映」「手順 17 の 2 段目（Codex）の指摘の反映」の行 |
 | V11 | 未 | |
 | 手順 1 | 済 | 2026-10-25。計画を起票し、設計レビューの 2 回目で指摘の解消を確かめた。U1〜U3 は利用者の決定（2026-10-25。判断の記録の「利用者の決定」の行）を反映した |
 | 手順 2 | 済 | 2026-10-25。`~/.claude/harness-rollout/p9-evidence/c11/t-engine-before-*`（試験ごとの `ok: ` の行 5 つ、vitest の件数、`npm run check` の出力、定期の走査の報告と出力）。`ac4555f` の出力から取った |
 | 手順 3 | 済 | 2026-10-25。`scripts/harness/harness.conf`（新規）と `docs/PLANS.md` を未コミットの変更として置いた。置いた後に `npm run check:docs` と `bash scripts/harness/check-docs.test.sh`（175 件中 175 件）が終了コード 0（未コミットの変更を含めて確かめた） |
 | 手順 4 | 済 | 2026-10-25。impl-reviewer の 1 段（対象: `scripts/harness/harness.conf`・`docs/PLANS.md`・この計画。未コミットの変更を含めて確かめた）で必須 0・推奨 1。推奨は手順 13 の箇条に足した（判断の記録の「手順 4」の行） |
-| 手順 5 | 未 | |
-| 手順 6 | 未 | |
-| 手順 7 | 未 | |
-| 手順 8 | 未 | |
-| 手順 9 | 未 | |
-| 手順 10 | 未 | |
-| 手順 11 | 未 | |
-| 手順 12 | 未 | |
-| 手順 13 | 未 | |
-| 手順 14 | 未 | |
-| 手順 15 | 未 | |
-| 手順 16 | 未 | |
-| 手順 17 | 未 | |
+| 手順 5 | 済 | 2026-10-25。まとめ役が作業用のコミット `87beb0d`（`scripts/harness/harness.conf`・`docs/PLANS.md`・この計画の 3 つ。push なし）を作った。コミットの後に `git status --short` が空で、`git log` の先頭が `87beb0d` であることを確かめた。V11 の検索の記録は `~/.claude/harness-rollout/p9-evidence/c21/t-engine-step5-commit-pre.txt` |
+| 手順 6 | 済 | 2026-10-25。`@87beb0d`、未コミットの変更なしで流した。版の印の最新は `rules-2026.10.25-1`。`update`（`--apply` なし）は終了コード 0 で、置き換える 8・作る 3・区画を置き換える 2・設定の版を書き換える 1 が期待と一致し、止める・知らせるの行は無かった。流した後も作業ツリーに変更が無かった。出力は `~/.claude/harness-rollout/p9-evidence/c11/t-engine-update-plan.txt` |
+| 手順 7 | 済 | 2026-10-25。利用者が `update` の計画（手順 6 の出力）による書き換えを承認した（会話 910f67f4 の発言番号 6。判断の記録の「手順 7 の利用者の決定」の行） |
+| 手順 8 | 済 | 2026-10-25。`@87beb0d` の上で `--apply` つきで流した（計画のファイルは流す間だけコミットの中身に戻した。判断の記録の「手順 7 の利用者の決定」の行）。終了コード 1。書いたのは写し 8 つの置き換え、3 つの新規（`scripts/harness/checks.d/README.md`・`stack-adapter.sh`・`stack-adapter.test.sh`）、`docs/PLANS.md` の区画 2 つ、`harness.conf` の `template_version` の 1 行、`docs/harness-log.md` の 1 行。道具の確かめは、`verify` が 13 個すべて一致、文書の検査が OK、試験は `check-docs.test.sh`・`drift-scan.test.sh`・`stack-adapter.test.sh` が通り、`notify.test.sh` が 1 件で通らなかった（手順 11 で解く。発見の欄の「手順 8」の行）。出力は `~/.claude/harness-rollout/p9-evidence/c11/t-engine-update-apply.txt` |
+| 手順 9 | 済 | 2026-10-25。7 組をひな形（`rules-2026.10.25-1`）と `diff` で比べ、差ごとの扱いを判断の記録の「手順 9」の行に書いた。取り込む差 3 つ（`.codex/hooks.json` の `-c core.fsmonitor=false`、`harness.yml` の注釈、`.secretlintrc.json` の正規表現）を手順 11・13 の箇条に足した |
+| 手順 10 | 済 | 2026-10-25。`scripts/harness/checks.d/` に `check-list.sh`・`layer-ratings.sh`・`network-names.sh` と、それぞれの `.test.sh`（10・36・12 件。すべて期待どおり）を置いた。`AGENTS.md` の検査のコマンドの表の文書の行と、`docs/QUALITY_SCORE.md` の目標の表の測る項目の括弧書きを 16 個の名前に直した（判断の記録の「手順 10」の行）。`bash scripts/harness/check-docs.sh --print checks` の末尾 3 つが「文書の検査の一覧、層の評価の上限、通信の名前の一覧」の順。`bash scripts/harness/check-docs.test.sh` が 150 件中 150 件、`npm run check:docs` が終了コード 0 |
+| 手順 11 | 済 | 2026-10-25。`scripts/harness/notify-paths.mjs` を消した（git を使わずファイルを消した）。`.codex/hooks.json` を K の `assets/codex-hooks.json`（`rules-2026.10.25-1`）と同じ中身にした。`.claude/settings.json` の `command` を K のひな形と同じ書き方にした（`permissions` は残した）。`docs/adr/README.md` の 0005 の状態と、0005 の「結果と限界」の末尾の注記を足した（判断の記録の「手順 11」の行）。`bash scripts/harness/notify.test.sh` が合格 43 件・不合格 0 件、`npm run check:docs` が終了コード 0 |
+| 手順 12 | 済 | 2026-10-25。`scripts/harness/harness-log-map.test.sh` を新しく作った。単独で流して 4 件中 4 件が期待どおり（変える前の状態、V7、V8、V9）。`package.json` へのつなぎは手順 13。`npm run check:docs` が終了コード 0（判断の記録の「手順 12」の行） |
+| 手順 13 | 済 | 2026-10-25。手順 13 の箇条のすべてを直した（`package.json`、`harness.yml`、`.secretlintrc.json`、`drift-scan.yml`、`AGENTS.md`、`ARCHITECTURE.md`、`eslint.config.mjs`、`docs/QUALITY_SCORE.md`、`docs/PLANS.md` の区画の外、`tech-debt-tracker.md`、`docs/harness-log.md`、ADR 0005 の注記のリンク、ADR 0007 と目録）。どうしたかと根拠は判断の記録の「手順 13」の行。`npm run check:docs` が終了コード 0。`npm run check` の結果は判断の記録の「手順 13」の行 |
+| 手順 14 | 済 | 2026-10-26。V1 のとおり。`npm run scan:drift` は要対応 0 件で、手順 2 の報告と比べて段の名前（`check:secrets`・`lint`・`typecheck`・`test`・`check:docs`・`test:harness`・`check:arch`）と品質目標の行は変わらない（違いは日時・対象のコミット・所要秒・TD-6 の行・origin の行の名前と説明の文）。報告は `~/.claude/harness-rollout/p9-evidence/c11/t-engine-after-drift-scan-report.md`。早期通知の所要時間は 2.2 秒（上限 18 秒。`~/.claude/harness-rollout/p9-evidence/c11/t-engine-after-notify-time.txt`） |
+| 手順 15 | 済 | 2026-10-26。対応表は `~/.claude/harness-rollout/p9-evidence/c11/t-engine-c11-5-map.md`。前の 433 件のうち、同じ名前で合格 188 件、期待の文言だけが違う同名 8 件、(i) 5 件、(ii) 42 件、(iii) 181 件、(iv) 9 件、どれにも当たらない 0 件。(i) の 5 件は新しい試験 `scripts/harness/project-config.test.sh` に足した（判断の記録の「手順 15」の行）。V5 は人が確かめる |
+| 手順 16 | 済 | 2026-10-26。V2・V3・V6・V7〜V9 の行のとおり |
+| 手順 17 | 済 | 2026-10-26。実装レビューの 1 段目（impl-reviewer・design-reviewer・security-reviewer）は重大 0、2 段目（Codex、gpt-6.1-sol）は重大 0・推奨 2・任意 1。採った 12 件を反映し、impl-reviewer の反映の後の確かめで合格。採らなかった 3 件は監督の会話への報告に書く。判断の記録の「手順 17 の 1 段目の指摘の反映」「手順 17 の 2 段目（Codex）の指摘の反映」の行 |
 | 手順 18 | 未 | |
 | 手順 19 | 未 | |
 | 手順 20 | 未 | |
@@ -568,6 +579,20 @@ V2・V6〜V9 の「一時のリポジトリ」は、手順の節の「一時の�
 - 2026-10-25: 手順 1 を終えた。利用者の決定（U1〜U3）を、目的の節の「決まった点」、V5・V7、手順 1・5・10・12・13・15 と判断の
   記録に反映した。未コミットの変更: `scripts/harness/harness.conf`（新規）、`docs/PLANS.md`、この計画のファイル（新規）。
   次は手順 5（まとめ役が作業用のコミットを作る）。
+- 2026-10-25: 手順 5・6 を終えた。手順 5 はまとめ役が作業用のコミット `87beb0d` を作った（push なし）。手順 6 の `update` の計画
+  （`--apply` なし）は期待と 14 行すべてで一致した。未コミットの変更: この計画のファイル（手順 5・6 の状態の表と、この行）。
+  次は手順 7（まとめ役が `update` の計画を利用者に示し、承認を得る）。
+- 2026-10-25: 手順 7・8 を終えた。利用者の承認を受けて `update --apply` を流した（終了コード 1。NG は `notify.test.sh` の 1 件だけで、
+  手順 11 で解く）。流した後の `npm run check:docs` は終了コード 0。未コミットの変更: 手順 8 で道具が書いたもの（状態の表の手順 8 の
+  行のとおり）と、この計画のファイル（手順 5〜8 の状態の表、進捗、発見、判断の記録）。次は手順 9。
+- 2026-10-26: 手順 9〜16 を終えた。未コミットの変更: 手順 8〜13 と手順 15 の変更（`git status --short` のとおり）と、この計画の
+  ファイル。`git diff --summary` に実行の許可の変更は無い（`notify-paths.mjs` の削除だけ）。次は手順 17（実装レビュー）。
+- 2026-10-26: 手順 17 の途中。実装レビューの 1 段目の指摘のうち、まとめ役が採った 8 件を反映した（判断の記録の「手順 17 の 1 段目の
+  指摘の反映」の行）。反映の後の `npm run check` は終了コード 0。手順 17 の残り: まとめ役の次の段のレビュー。
+- 2026-10-26: 手順 17 の途中。Codex の第二レビューの指摘 3 件を反映した（判断の記録の「手順 17 の 2 段目（Codex）の指摘の反映」の
+  行）。反映の後の `npm run check` は終了コード 0。手順 17 の残り: まとめ役による統合。
+- 2026-10-26: 手順 17 を終えた。利用者が対応表を確かめ（発言番号 13）、V5・V10 を済にした。利用者はコミット・push・PR の作成も
+  指示した。次は手順 18（コミット・push・PR）。
 
 ## 発見
 
@@ -586,6 +611,36 @@ V2・V6〜V9 の「一時のリポジトリ」は、手順の節の「一時の�
   区画の中身と例のほかに、区画の外の「受け入れ確認の記録」の「置き場と名前」の 2 か所が違う（K は、状態の表で「不合格」と
   「持ち越し:」を書いた基準を失敗にしない旨と、絶対パスの形をパスの列挙でなく「ホームの下と一時ディレクトリの下」と書く）。
   前者は上の行の検査 9 の違いに当たる。手順 3 の範囲に無いので変えていない。扱いは判断の記録の「手順 4」の行で決めた。
+- 2026-10-25（置き換えの調べ）: 実装の作業担当が、このプロジェクトの中身に K の写しを重ねた一時の場所で、写しの試験を流して
+  置き換えの前と比べた（出どころは作業担当の調べ）。要点:
+  - `check-docs.test.sh`: 175 件 → 146 件。名前が一致するのは 103 件。前にだけある 72 件のうち 60 件は T の検査 12〜14 の場合
+    （手順 10 で追加の検査の試験へ移す）。`templates/` のパスの試験 2 件は、決まった点の U3 の (i) としてこのプロジェクトの試験に
+    足し直す。
+  - `notify.test.sh`: 183 件 → 43 件。名前が一致するのは 6 件。
+  - `drift-scan.test.sh`: 51 件 → 29 件。名前が一致するのは 0 件。
+  - K の `drift-scan.sh`（版の印 `rules-2026.10.25-1`）は、品質目標の表の読み取りが今の `drift-scan.sh`（`87beb0d`）より緩む点が
+    3 つある。
+    - (1) 3 つの表の見出しの行を、決まった文字列と完全一致で照らすこと（今の 240〜242 行・258〜267 行）が無くなる。K は見出しの
+      列の名前で読み、ほかの列があってもよい（K の 487〜496 行）。
+    - (2) 列の数をちょうど 4・6・7 と求めること（今の 285 行・289〜290 行）が無くなる。
+    - (3) 層の表（表 2）が無いと要対応にすること（今の 310 行）が無くなる。K では層の表は省ける（K の 27 行）。
+    - このプロジェクトの `docs/QUALITY_SCORE.md` の 3 つの表（16 行・51 行・65 行）は、K が要る列を持つので、走査は働く。
+  - K の写しの `notify.test.sh` の項目「11: .claude/settings.json が notify.sh claude を呼ぶ」は、今の `.claude/settings.json` の書き方
+    では失敗する（合格 42・不合格 1）。手順 11 で書き方を直す。
+- 2026-10-25（手順 8）: `update --apply` の確かめで出た NG は 1 つだけで、手順 10〜13 で解けるものに当たる。
+  - `notify.test.sh` の項目「11: .claude/settings.json が notify.sh claude を呼ぶ」が通らない。上の行のとおり、手順 11 で
+    `.claude/settings.json` の書き方を直して解く。
+  - 手順 10〜13 で解けないものは無い。文書の検査は、T の検査 12〜14 が本体から外れたので、`AGENTS.md` と `docs/QUALITY_SCORE.md` の
+    括弧書きが古いままでも OK になる（手順 10 の `check-list.sh` を置くまでは、この食い違いを検査が拾わない）。
+  - 道具が `docs/harness-log.md` に足した行の「出どころ」の列は「規約の版の更新（rules-2026.10.25-1 → rules-2026.10.25-1）」で、
+    前と後の版が同じになっている。設定に `template_version` が無かったので、前の版を最新の版の印とみなしたため（前提の節の
+    `BASE_TAG` の決まり）。まとめ役の決定で、手で直さず道具の出力のまま残す。K の道具への改善の候補として、監督の会話への
+    報告に書く（まとめ役が書く）。
+- 2026-10-25（手順 8、手順 10 で気づいた）: `update --apply` で置き換えた写しのうち、`scripts/harness/check-docs.sh`・`check-secrets.sh`・
+  `notify.sh` の 3 つの実行の許可が外れた（`git diff --summary` で 100755 から 100644 への変更）。K の版の印 `rules-2026.10.25-1` では
+  `check-docs.sh` は 100755、ほかの 2 つは 100644 で、道具が書いたファイルの許可は 0600 だった。このプロジェクトでは 3 つとも
+  `bash <ファイル>` で呼ぶので、検査と試験は動く。写しの中身ではないので手で直してよいかは、まとめ役の判断を待つ（この作業では
+  直していない）。K の道具への改善の候補（置き換えるときに元のファイルの許可を保つ）として、監督の会話への報告に書く。
 
 ## 判断の記録
 
@@ -658,5 +713,127 @@ V2・V6〜V9 の「一時のリポジトリ」は、手順の節の「一時の�
   - 費用（P9 の計画の判断 4、案 A）: 手順 15 の上限を 45 ドルから 85 ドルに上げ、68 ドルを超えたら続ける前に尋ねる。費用は
     P9 の計画の費用の表で見張る。この計画には費用の節が無いので、費用の値は書かない。
     - 外した案: 45 ドルのままにする（案 B）。新しい会話へ引き継ぐ（案 C）。
+- 2026-10-25（`.claude/settings.json` の書き方）: K の写しの `notify.test.sh` の項目 11 が探す書き方に合わせ、このプロジェクトの
+  `.claude/settings.json` の `command` を K のひな形の形に直す（手順 11）。外した案: K の正本の試験を直す。`.claude/settings.json` は
+  各プロジェクトが持つ描いた物で、K のひな形はすでに試験が探す書き方になっている。外れているのはこのプロジェクトの側なので、
+  正本を直す必要は無い。
+- 2026-10-25（手順 7 の利用者の決定）: 利用者が、`update --apply` でこのプロジェクトのファイルを書き換えることを承認し、書き込みの
+  直前に残る計画のファイルの未コミットの変更は案 A で扱うと決めた（会話 910f67f4 の発言番号 6）。案 A: 書き込みの直前に計画の
+  ファイルを一時フォルダに控え、計画のファイルを `87beb0d` の中身に戻し、書き込みが終わったらすぐに控えから戻す。そのとおりに行い、
+  戻した後の計画の差分が控える前と同じであることを確かめた。
+- 2026-10-25（手順 9）: 描いた物 7 組を、版の印 `rules-2026.10.25-1` のひな形と比べた（差分は作業担当の一時の置き場に置いた）。
+  差ごとの扱い:
+  - `agents.md` と `AGENTS.md`: プレースホルダーと、このプロジェクトの内容（アプリの説明、決定、秘匿値の追加の決まり、落とし穴）の
+    ほかの差は、導入済みの印の説明（手順 13 で直すと決めてある）と、文書の地図の「定期の走査」の行（手順 13 で部品の断片の形に
+    直すと決めてある）だけ。新しく取り込むものは無い。地図の「検査」の行は、このプロジェクトの行のほうが、検査を定めるファイルを
+    多く並べているので残す（本体の検査 12 は、この行の 2 列目を読む）。
+  - `codex-hooks.json` と `.codex/hooks.json`: 手順 11 で直すと決めてある差（`notify-paths.mjs` の確かめを外し、未追跡のファイルの
+    確かめを足す）のほかに、最初の `git worktree list` に `-c core.fsmonitor=false` を付ける差がある。取り込む（手順 11 で K の
+    `command` をそのまま使う）。ほかの git の呼び出しと同じく、作業ツリーの設定のファイルの監視のプログラムを起動しないため。
+  - `claude-settings.json` と `.claude/settings.json`: `command` の引用符の位置（手順 11 で取り込むと決めてある）のほかは、
+    このプロジェクトの `permissions` の行だけ。`permissions` は残す。
+  - 部品の `drift-scan.yml` と `.github/workflows/drift-scan.yml`: pull request の `paths`（手順 13 で `scripts/harness/**` にすると
+    決めてある）のほかに、同時実行の制御・保存期間（予定実行 90 日、ほかは 7 日）・成果物の名前・`node-version-file` と
+    `cache: npm` が違う。どれも取り込まない。保存期間と同時実行の制御は ADR 0006 の決定（54 行）で、成果物の名前と Node の版の
+    指定はこのプロジェクトの `harness.yml` と合わせたもの。`cache: npm` は、K のひな形が「ほかのワークフローが書いた cache を、
+    公開する前の確かめの道具に混ぜない」ために使わない形だが、このプロジェクトでは `harness.yml` も同じ `cache: npm` を使い、
+    `npm ci` が `package-lock.json` の integrity で中身を照らすので、この作業では変えない。`paths` の `.secretlintrc.json` の行は、
+    走査が公開の前の確かめで秘匿値の検査（`.secretlintrc.json` を読む）を使うので残す。
+  - `ci-harness.yml` と部品の `ci-secrets.yml` と `.github/workflows/harness.yml`: 1 本にまとめた形（棚卸しの表の CI の行）の
+    ほかの差は、取得の段の `fetch-depth: 0` の注釈（K は本体の検査 12 の merge-base のためと書く）と、変更の範囲の起点の読み方
+    （K は GitHub の式を使わずイベントの JSON から読む。ひな形のプレースホルダーと形が重ならないための書き方）。前者は手順 13 で
+    注釈だけ取り込む。後者は取り込まない（このプロジェクトの書き方で同じ値を読めているため）。
+  - 部品の `secretlintrc.json` と `.secretlintrc.json`: `Anthropic OAuth token` の規則の正規表現を `(?:…)` で囲む差だけ。意味は
+    変わらないが、ひな形と中身をそろえるため、手順 13 で取り込む。
+- 2026-10-25（手順 10）: 3 つの追加の検査と試験の移し方。
+  - `AGENTS.md`（検査のコマンドの表の文書の行）と `docs/QUALITY_SCORE.md`（目標の表の測る項目）の括弧書きは、手順 13 ではなく
+    手順 10 で直した。`check-list.sh` を置いた時点で、古い括弧書きを検査が失敗にし、手順 10 の終わりの `npm run check:docs` が
+    通らないため。名前の順は手順 10 の設計のとおり。
+  - 試験は、本体の `check-docs.sh` を通さずに、追加の検査のファイルを本体と同じ呼び方（作業ディレクトリを検査する根にし、
+    `HARNESS_ROOT` と `HARNESS_ENGINE_DIR` を渡し、標準入力を `/dev/null` にする）で直接動かす。一時の根には、その検査が読む
+    ファイルだけを置く。手順 15 の対応表で前の項目と並べられるよう、場合の名前は置き換えの前の試験と同じにした。
+  - 置き換えの前の試験で本体の件数の行（「check-docs: 2 件の問題があります」「check-docs: 1 件の問題があります」）を確かめていた
+    2 件は、`check-docs: NG: ` の行の数（2 と 1）を確かめる形にした。追加の検査は件数の行を出さず、本体が NG の行を数えるため。
+  - 文言から検査の番号を外した（例:「eslint.config.mjs がありません（検査 13 が」を「（通信の名前の一覧の検査が」に）。追加の
+    検査には番号が無いため。直し方が指すファイルは、`scripts/harness/check-docs.sh` から各追加の検査のファイルに直した。
+  - `check-list.sh` は、名前の一覧を読めないとき（本体の `--print checks` が失敗するか何も出さないとき）を失敗にする。置き換えの
+    前の `CHECK_NAMES` には無かった場合で、試験は足していない（本体の写しを壊す見本を作れないため）。
+- 2026-10-25（手順 11）: ADR 0005 の注記と目録の状態では、0007 をリンクにせず番号だけで書いた。0007 のファイルは手順 13 で作るので、
+  手順 11 の終わりにリンクを書くと、文書の検査（リンク）が通らないため。手順 13 で 0007 を作るときに、0005 の注記の「0007」を
+  `docs/adr/0007-harness-engine-copies.md` へのリンクにする（目録の状態の列は、0001 の前例と同じく番号だけのまま）。
+- 2026-10-25（手順 12）: `harness-log-map.test.sh` の書き方。
+  - 一時のリポジトリは、場合ごとに作り直す（`checkout` と `clean` で戻す形は使わない。戻し忘れで場合どうしが影響し合わないため）。
+    写す一覧は最初に 1 回だけ作る。
+  - 本体の検査 12 の NG の行は、「check-docs: NG: 」で始まり「検査の由来の記録」を含む行とした（本体の検査 12 の 2 つの NG の文言が、
+    どちらもこの語を含む。写しの `scripts/harness/check-docs.sh` の 1307 行と 1353 行）。
+  - V7 の変更は `.dependency-cruiser.cjs` の末尾へのコメントの行の追加、V8 の記録の行は 5 列の表に合わせた 1 行、V9 の変更は
+    一時のリポジトリの `src/` の下の最初の `.ts` のファイルの末尾へのコメントの行の追加にした。
+- 2026-10-25（手順 13）: 箇条のほかに決めたこと。
+  - `eslint.config.mjs` は、箇条の 11 行・13 行に加えて、17 行のコメント（「npm run check:docs の検査 13 が読み取る」）も
+    `scripts/harness/checks.d/network-names.sh` に直した。同じ検査を指すコメントで、残すと番号の無い追加の検査を古い番号で
+    指したままになるため（コメントだけで、振る舞いは変わらない）。
+  - `docs/QUALITY_SCORE.md` 9〜10 行の走査の側の記述は、K の `drift-scan.sh`（冒頭の説明の 4。表を見出しの列の名前で読み、ほかの
+    列があってもよい）と合わない「同じ変更で走査と検査 14 の両方を直す」を、「同じ変更で `layer-ratings.sh` を直し、走査が要る
+    列を残す（走査は写しで手で変えないため）」に直した。7 行の「見出しの行の文字列と列の数を変えない」の決まりは、
+    `layer-ratings.sh` が表 1 の見出しの行を文字列で比べるので残した。
+  - TD-6 は消した。K の写しの `notify.test.sh` に `前後で変わらない`・`snapshot`・`ls -la` を `grep` して 0 件で、問題の試験 15 が
+    置き換えで無くなったため。TD-7 は残し、場所を写しの `scripts/harness/drift-scan.sh` 466〜535 行に、検査 14 への参照を
+    `scripts/harness/checks.d/layer-ratings.sh` に直した。K の `drift-scan.sh` も、縦線で始まらない行で表を閉じる（527 行の
+    `{ intable = 0`）ので、問題は残る。写しなのでこのプロジェクトでは直せず、直すなら K の正本で直す（監督の会話への報告の候補）。
+  - `docs/harness-log.md` は、検査 12〜14 の元の 3 行の「外した変更」の列を埋め、移した 3 つの検査・早期通知の付け替え・由来の
+    記録の試験の 5 行を足した。検査 12 の行には、移さなかった後半（冒頭の一覧の数と `CHECK_NAMES` の数の照合）と理由を書いた。
+    由来の記録の試験の行の出どころは、決まった点の U1 の 1 件で、目安に満たないが利用者が選んだ形で書いた。
+  - `docs/PLANS.md` の括弧書きは、K の `assets/plans.md` 209〜210 行の文をそのまま使った。同じ段落の絶対パスの形の並び
+    （K は「ホームの下と一時ディレクトリの下の絶対パス」と書く）は、箇条に無いので変えていない。
+  - `AGENTS.md` は 117 行（上限 120）。
+- 2026-10-25（実行の許可。まとめ役の決定）: `update --apply` で外れた `scripts/harness/check-docs.sh`・`check-secrets.sh`・`notify.sh` の
+  実行の許可は、まとめ役が `chmod +x` で `87beb0d` の 100755 に戻した（`git diff --summary` に許可の変更が無いことを確かめ済み）。
+  写しの照合（比べる道具の `verify` と本体の検査 13）は許可を見ないので合否に影響せず、このプロジェクトの既存の許可を変える
+  理由が無いため。手順 14 以降も `git diff --summary` で許可が変わっていないことを確かめる。発見の欄の、K の道具の改善の候補
+  （置き換えるときに元の許可を保つ）はそのまま残す。
+- 2026-10-26（手順 15）: 対応表の作り方と、(i) の置き場。
+  - 名前の突き合わせは、`ok: ` の行の全体が同じものを同じ名前とし、残りは、括弧の中の期待（「（通る）」「（失敗する: …）」）を
+    除いた名前で後の項目と比べた。期待の文言だけが違う 8 件（手順 10 で検査の番号と件数の行を変えた 3 件と、写しの試験の見本の
+    計画の名前が変わった 5 件）は、同じ名前の項目が合格したものとして数えた。
+  - (i) の 5 件（`templates/` のパスの 2 件、定期の走査が実物の文書を読める 1 件、フックの設定の形と `.codex/config.toml` の 2 件）は、
+    新しい試験 `scripts/harness/project-config.test.sh`（写しでない）に、前と同じ場合の名前で足し、`package.json` の `test:harness`
+    の最後につないだ。`harness-log-map.test.sh` は C12 の試験として名前を決めたので、別のファイルにした。`templates/` の無いパスの
+    場合は、一時のリポジトリに `templates/module/` が実在するので、`templates/no-such-module/` にした。定期の走査の場合は、
+    報告を公開する前の秘匿値の検査が依存を使うので、一時のリポジトリに作業ツリーの `node_modules` を指すリンクを置いた
+    （`/node_modules` は `.gitignore` で除く）。あわせて `AGENTS.md` の検査の試験の行、`harness.yml` の段の名前、
+    `docs/harness-log.md` に 1 行を足した。
+  - (iii) の 181 件は、置き換えの前のこのプロジェクトの `notify.sh`・`drift-scan.sh`・`check-docs.sh` の振る舞いの試験で、
+    同じ振る舞いが K の写しにある（対応表の根拠の列に写しのファイルと行）のに、K の写しの試験に項目が無いもの。K の正本の
+    試験に足す作業として、監督の会話への報告に書く（まとめ役が書く）。
+- 2026-10-26（手順 16）: V6 の `verify` は、V6 の操作の文のとおり比べの相手の版を固定せずに流した（`HARNESS_COPIES_CMP_TAG` を
+  付けたのは V3 だけ）。V6 の「不一致」は冒頭に記録された版の正本との照合で決まるので、固定の有無で結果は変わらない。
+- 2026-10-26（手順 17 の 1 段目の指摘の反映）: 実装レビューの 1 段目（impl-reviewer・design-reviewer・security-reviewer。重大 0）の
+  指摘のうち、まとめ役が採った 8 件を反映した。(1) `docs/harness-log.md` の試験「写し 1」の行の「外した変更」を埋めた。
+  (2) `tech-debt-tracker.md` の「同じ変更で走査も直す」を、走査が読む見出しの行（写しの `TD_HEADER`）のまま保つ、に直した。
+  (3) `harness-log-map.test.sh` と `project-config.test.sh` の冒頭に、一時のリポジトリの作り方が同じで両方を同じ変更で直すことと、
+  進行中の計画を写さない理由（基準の日を固定するので、後で起票した計画を本体の検査 11 が判定できず落ちる）を書いた（共通の部品
+  には切り出さない）。(4)(5) ADR 0007 の「更新のたびに行うこと」に 3 つの箇条、「結果と限界」に、フックが確認なしに実行する範囲に
+  `checks.d/*.sh` が入ることを足した（Claude Code は会話を始めた作業ツリーのもの、Codex は本体の HEAD と同じときだけ本体のもの）。
+  (6) `project-config.test.sh` の走査の場合に、報告に層 `src/domain/` の行（`check:arch=成功`）と領域「秘匿値がリポジトリに無い」の行
+  （`check:secrets:push=照合しない`）が有ることの照合を足した。(7) 同じ試験に、`scripts/harness/` の直下の `*.test.sh`・`*.test.mjs` が
+  すべて `test:harness` にあることの場合を足した（`checks.d/` の下は、写しの `check-docs.test.sh` の 1118〜1127 行が流すので除く）。
+  (8) `checks.d/check-list.test.sh` の本体の検査の名前を、`--print checks` の出力から位置（末尾・中ほど・7 番目・2 番目と 3 番目）で
+  選ぶ形にした。7 番目は本体の検査 7 で、場合の名前「検査 7 を欠く」の意図を保つ。採らなかったもの: `.codex/hooks.json` の
+  `--exclude-standard`（K のひな形と同じ形で、このプロジェクトだけ変えると K と食い違うため。まとめ役が K の改善の候補として
+  監督の会話へ報告する）と、`check-secrets.mjs`・`notify.sh` の写しへの指摘（写しは手で変えないため）。反映の後の `npm run check` は
+  終了コード 0 で、`project-config.test.sh` は 6 件中 6 件。`git diff --summary` に許可の変更は無い。
+- 2026-10-26（手順 17 の 2 段目（Codex）の指摘の反映）: Codex の第二レビューの指摘 3 件を反映した。(1) `project-config.test.sh` の
+  設定の場合に、規約のひな形 `rules-2026.10.25-1` の `assets/codex-hooks.json` の中身をそのまま写して持ち（CI では規約のリポジトリを
+  読めないので実行のときに読まない）、`.codex/hooks.json` の各フックの command がその command と一字一句同じであることを照らす形にした
+  （`.claude/settings.json` の command は、前から全文の期待値で照らしている）。ひな形が変わったときに期待値を直すことは、ADR 0007 の
+  「更新のたびに行うこと」の「フックの設定の期待値を直す」の箇条が受け持つ。C11 (5) の対応表の `notify.test` 17 の (iii) の行の根拠に
+  「起動の文字列は `scripts/harness/project-config.test.sh` で全文を照らす」を足した（分け方は変えない）。(2) 同じ試験の走査の場合に、
+  実物の `tech-debt-tracker.md` の各 TD の行について、報告に `3/<識別子>` と場所のパスの行（写しの `drift-scan.sh` 450 行の形）が
+  有ることの照合を足した（行が無ければ `3/なし` を求める）。(3) ADR 0007 の「結果と限界」の Codex の起動元の条件を、34〜35 行に
+  合わせて「除外されていない未追跡のファイルも無いとき」に直した。反映の後の `npm run check` は終了コード 0 で、
+  `project-config.test.sh` は 6 件中 6 件。`git diff --summary` に許可の変更は無い。
+- 2026-10-26（(iii) の 181 件の扱い）: 対応表の (iii) の 181 件は、この会話では K の正本の試験に足さず、監督の会話に渡す。利用者が
+  発言番号 13（2026-10-25、会話 910f67f4）で推奨どおりとした。理由は、この会話の作業の範囲が T だけで、K の正本と写しはここでは
+  変えないことなど。
 
 ## 結果と振り返り

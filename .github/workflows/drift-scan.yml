@@ -16,8 +16,7 @@ on:
   pull_request:
     paths:
       - .github/workflows/drift-scan.yml
-      - scripts/harness/drift-scan.sh
-      - scripts/harness/drift-scan.test.sh
+      - scripts/harness/**
       - docs/QUALITY_SCORE.md
       - docs/exec-plans/tech-debt-tracker.md
       - AGENTS.md

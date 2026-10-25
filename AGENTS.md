@@ -5,7 +5,9 @@
 この行は、このプロジェクトにハーネス（規約と検査の一式）を導入済みであることを示す印である。
 `scripts/harness/check-docs.sh` が、この版で必須のファイルが揃っているかを確かめる。印の書式（「ハーネスの版: 」に
 整数を続けた 1 行）は、ハーネスの規約が定めたものに合わせている。版の数は、必須のファイルが増えるときに上げ、
-同じ変更で `check-docs.sh` の版ごとの一覧を足す。
+同じ変更で設定のファイル `scripts/harness/harness.conf` に、その版の `required.<版>=<パス>` の行を足す。
+`scripts/harness/` の検査の本体（冒頭に `harness-copy` の行があるファイル）は規約の正本の写しなので、手で変えない。
+このプロジェクトだけの検査は `scripts/harness/checks.d/` に足す（決まりは同じ置き場の `README.md`）。
 
 ## このアプリ
 
@@ -51,8 +53,8 @@ ai-news-today（GitHub）に置く。現在は土台だけで、記事の取得�
 | lint | `npm run lint` |
 | 型 | `npm run typecheck` |
 | 試験 | `npm run test` |
-| 文書（必須のファイル、CLAUDE.md、地図、リンク、目録、行数、ARCHITECTURE.md に書いたパス、計画の必須の節、受け入れ確認の記録、製品の仕様の目録と状態、古い計画、文書の検査の一覧、通信の名前の一覧、層の評価の上限） | `npm run check:docs` |
-| 検査の試験（文書の検査、早期通知、ESLint の規則が区画ごとに働くこと、ひな形と `src/` の間の依存の規則、定期の走査） | `npm run test:harness` |
+| 文書（必須のファイル、CLAUDE.md、地図、リンク、目録、行数、ARCHITECTURE.md に書いたパス、計画の必須の節、受け入れ確認の記録、製品の仕様の目録と状態、古い計画、検査の由来の記録、写しの中身、文書の検査の一覧、層の評価の上限、通信の名前の一覧） | `npm run check:docs` |
+| 検査の試験（文書の検査、早期通知、ESLint の規則が区画ごとに働くこと、ひな形と `src/` の間の依存の規則、定期の走査、段の読み取り（定期の走査の部品）、検査の由来の記録、このプロジェクトの設定と実物の文書） | `npm run test:harness` |
 | 層の依存の向き、`src/` の直下の名前、ひな形（`templates/`）と `src/` の間の依存 | `npm run check:arch` |
 | 秘匿値（作業ツリーの、コミットする全ファイル） | `npm run check:secrets` |
 | 秘匿値（push する範囲の各コミットの中身） | `npm run check:secrets:push` |
@@ -79,7 +81,7 @@ ai-news-today（GitHub）に置く。現在は土台だけで、記事の取得�
 | 検査（スクリプトと試験の置き場、ESLint の設定、依存の規則の設定、検査を一式と CI につなぐ設定である `package.json` の check と test:harness、CI のワークフロー） | `scripts/harness/`、`eslint.config.mjs`、`.dependency-cruiser.cjs`、`package.json`、`.github/workflows/harness.yml` | 検査を足す・直すとき（指摘を検査にするときを含む） |
 | 検査の由来の記録 | `docs/harness-log.md` | 指摘を検査にするとき、検査の理由を知りたいとき |
 | 品質目標 | `docs/QUALITY_SCORE.md` | 設計の品質を判断するとき |
-| 定期の走査 | `.github/workflows/drift-scan.yml` | 文書を点検するとき（走査の結果の取得に使う） |
+| 検査（定期の走査） | `.github/workflows/drift-scan.yml` | 文書を点検するとき（走査の結果の取得に使う）。定期の走査（`scripts/harness/drift-scan.sh`）を変えるとき。段の読み取りは `scripts/harness/stack-adapter.sh` |
 | ハーネスの評価課題 | `docs/quality-eval/README.md` | ハーネスを変えた後に効果を測るとき |
 
 ## 落とし穴

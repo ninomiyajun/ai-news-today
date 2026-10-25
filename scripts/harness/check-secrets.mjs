@@ -1,5 +1,9 @@
 #!/usr/bin/env node
-// 秘匿値の検査の本体。入口は scripts/harness/check-secrets.sh（npm run check:secrets と check:secrets:push）。
+// harness-copy: source=home/agents/skills/project-harness-init/assets/parts/node-secrets/assets/check-secrets.mjs
+// harness-copy: version=rules-2026.10.25-1
+// harness-copy: sha256=602a8424b8f4ce7c4f3fee4a2fb3714f6edb738bd369fc25e3207e602d96f83d
+// harness-copy: この 4 行と本体は手で変えない。正本を直して project-harness-init の「導入済みのプロジェクトの更新」で置き換える
+// 秘匿値の検査の本体。入口は scripts/harness/check-secrets.sh（作業ツリーは引数なし、push する範囲は --commits）。
 // CI はこのファイルを node で直接呼ぶ（npm の pre と post のスクリプトを動かさないため）。
 //
 // 2 つの調べ方がある。
@@ -11,7 +15,7 @@
 //     到達でき、push 先のリモートの追跡ブランチから到達できないコミット。名前の既定は origin。初回の push ではすべて）。
 //     範囲のコミットが 0 件でも、タグの注釈は調べる。
 //
-// どちらも次の場合は失敗にする（理由は docs/adr/0002-secret-scan-scope.md）。
+// どちらも次の場合は失敗にする。
 //   - 一覧にあるのに検査できなかったファイル（作業ツリーで削除したものを除く）
 //   - シンボリックリンク
 //   - 中身に NUL バイトを含み、既知のバイナリの拡張子（BINARY_EXTS）でないファイル（UTF-16 で書いた文字のファイルなど。
@@ -50,16 +54,17 @@ const isSecretlintDefaultExcluded = (rel) => {
 };
 
 // 単純な内容検査で探す形（代表的な鍵とトークンの接頭辞）。secretlint の規則より粗い。
+// 正規表現は (?:…) で囲む（意味は変わらない。スラッシュの直後に英字が来る字句を、絶対パスの形の検査が拾わないため）。
 const SIMPLE_PATTERNS = [
-  ["GitHub のトークン", /gh[pousr]_[A-Za-z0-9]{36,}/],
-  ["GitHub の細かい権限のトークン", /github_pat_[A-Za-z0-9_]{22,}/],
-  ["Anthropic の鍵・トークン", /sk-ant-[a-z0-9]+-[A-Za-z0-9_-]{20,}/],
+  ["GitHub のトークン", /(?:gh[pousr]_[A-Za-z0-9]{36,})/],
+  ["GitHub の細かい権限のトークン", /(?:github_pat_[A-Za-z0-9_]{22,})/],
+  ["Anthropic の鍵・トークン", /(?:sk-ant-[a-z0-9]+-[A-Za-z0-9_-]{20,})/],
   ["OpenAI などの sk- の鍵", /\bsk-[A-Za-z0-9_-]{20,}/],
-  ["AWS のアクセスキー", /AKIA[0-9A-Z]{16}/],
-  ["Slack のトークン", /xox[abposr]-[A-Za-z0-9-]{10,}/],
-  ["Google の API キー", /AIza[0-9A-Za-z_-]{35}/],
-  ["npm のトークン", /npm_[A-Za-z0-9]{36}/],
-  ["秘密鍵", /BEGIN [A-Z ]*PRIVATE KEY/],
+  ["AWS のアクセスキー", /(?:AKIA[0-9A-Z]{16})/],
+  ["Slack のトークン", /(?:xox[abposr]-[A-Za-z0-9-]{10,})/],
+  ["Google の API キー", /(?:AIza[0-9A-Za-z_-]{35})/],
+  ["npm のトークン", /(?:npm_[A-Za-z0-9]{36})/],
+  ["秘密鍵", /(?:BEGIN [A-Z ]*PRIVATE KEY)/],
 ];
 
 const die = (msg) => {
@@ -249,7 +254,16 @@ const chunkFiles = (files) => {
 const main = async () => {
   const argv = process.argv.slice(2);
   const commitMode = argv[0] === "--commits";
-  if (argv.length > 0 && !commitMode) die(`知らない引数です: ${argv[0]}（使えるのは --commits だけ）`);
+  // --file <絶対パス>: そのファイル 1 つだけを調べる（定期の走査が、報告を公開する前に使う）
+  const fileMode = argv[0] === "--file";
+  if (argv.length > 0 && !commitMode && !fileMode) die(`知らない引数です: ${argv[0]}（使えるのは --commits と --file <絶対パス> だけ）`);
+  if (fileMode) {
+    let st = null;
+    try { st = argv.length === 2 && path.isAbsolute(argv[1]) ? fs.lstatSync(argv[1]) : null; } catch { st = null; }
+    if (!st || !st.isFile()) die("--file の後に、調べる通常のファイルの絶対パスを 1 つだけ書いてください");
+    // secretlint が報告するパスと照らせるよう、実体のパスに解決してから使う（一時ディレクトリがシンボリックリンクを経る環境など）
+    argv[1] = fs.realpathSync(argv[1]);
+  }
   if (!fs.existsSync(SECRETLINT)) die("secretlint がありません。先に npm ci を実行してください");
   const revArgs = commitMode ? parseCommitArgs(argv.slice(1)) : [];
 
@@ -265,7 +279,8 @@ const main = async () => {
     });
   }
   {
-    const { entries, texts, note } = commitMode ? await collectCommits(revArgs, tmp) : collectWorktree();
+    const one = () => ({ entries: [{ abs: argv[1], rel: path.basename(argv[1]), label: path.basename(argv[1]) }], texts: [], note: "" });
+    const { entries, texts, note } = commitMode ? await collectCommits(revArgs, tmp) : fileMode ? one() : collectWorktree();
     // コミットの検査は、範囲のコミットが 0 件でもタグの注釈を調べるので、ファイルが無くても続ける
     if (!commitMode && entries.length === 0 && problems.symlinks.length === 0 && problems.unreadable.length === 0) {
       die("対象のファイルがありません");
@@ -327,6 +342,15 @@ const main = async () => {
         forSimple.push(e);
       }
     }
+    // --file では、単純な内容検査も必ず掛ける（公開する前の最後の確かめなので、secretlint の規則の外の形も拾う）
+    if (fileMode) {
+      for (const e of readable) {
+        if (!simpleSet.has(e)) {
+          simpleSet.add(e);
+          forSimple.push(e);
+        }
+      }
+    }
     // 見つかった値を伏せた形で表示する（secretlint の既定の maskSecrets）
     for (const files of chunkFiles(withFindings.map((e) => e.abs))) {
       spawnSync(SECRETLINT, [...common, "--", ...files], { cwd: ROOT, stdio: "inherit" });
@@ -343,7 +367,7 @@ const main = async () => {
       `secretlint で ${checkedBySecretlint} 件、単純な内容検査で ${forSimple.length} 件` +
       `（うち secretlint の既定の対象外 ${excludedCount} 件、secretlint でも調べた ${forSimple.length - excludedCount} 件）` +
       `を調べました${note ? `。${note}` : ""}`;
-    console.log(`check-secrets: ${commitMode ? "コミットの中身" : "作業ツリー"}: ${summary}`);
+    console.log(`check-secrets: ${commitMode ? "コミットの中身" : fileMode ? "ファイル" : "作業ツリー"}: ${summary}`);
 
     let failed = false;
     const report = (list, title, fix) => {
@@ -368,4 +392,9 @@ const main = async () => {
   }
 };
 
-await main();
+// 想定しない誤り（読めないファイル、壊れた報告など）は、検査が動かなかったこととして終了コード 2 にする
+try {
+  await main();
+} catch (err) {
+  die(`想定しない誤りで止まりました: ${err && err.message ? err.message : String(err)}`);
+}
