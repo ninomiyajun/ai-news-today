@@ -1,15 +1,22 @@
 #!/usr/bin/env bash
-# 定期の走査（drift-scan）。文書とコードのずれの材料を集めて、報告 report.md を 1 つだけ書く。
-#   手元: npm run scan:drift -- --out <置き場>（相対のパスは、リポジトリの根から数える。npm が根で実行するため）
-#   CI:   .github/workflows/drift-scan.yml（毎週の予定実行。報告を成果物に残す）
-# 判断の記録（項目、所見で失敗にしない理由、公開する内容の限定、間隔と保存期間）は docs/adr/0006-drift-scan.md。
+# harness-copy: source=home/agents/skills/project-harness-init/assets/harness/drift-scan.sh
+# harness-copy: version=rules-2026.10.25-1
+# harness-copy: sha256=eba1ee6ae87a4d17214d4b3183db3cf95204e614152a48bc81d7867689b44e37
+# harness-copy: この 4 行と本体は手で変えない。正本を直して project-harness-init の「導入済みのプロジェクトの更新」で置き換える
+# 定期の走査（drift-scan）。文書とコードのずれの材料を集めて、報告 report.md を 1 つだけ書く。ハーネスの検査の本体の写しで、
+# どのプロジェクトでも同じ中身を置く。技術ごとの違い（検査の段の読み取りと実行）は、部品が置く scripts/harness/stack-adapter.sh
+# （働き harness-stack）に任せ、報告を公開する前の秘匿値の確かめは、部品が置く scripts/harness/check-secrets.sh（働き
+# secrets-check）に任せる。どちらも無ければ終了コード 2 で止まる。
+#   手元: bash scripts/harness/drift-scan.sh --out <置き場>（相対のパスは、リポジトリの根から数える）
+#   CI:   .github/workflows/drift-scan.yml（予定実行。報告を成果物に残す）
+# 既定のブランチは、同じ置き場の harness.conf の default_branch（check-docs.sh --print conf default_branch で読む。無ければ main）。
 #
 # 走査の項目（報告の各行に、決まった形の行の識別子を付ける）:
-#   1 検査の一式（1/<段の名前>）: package.json の check に並ぶ段（npm run <名前>）を読み取り、段ごとに別々に実行し、
-#     失敗しても続ける。段ごとの終了コードと所要秒だけを書き、出力は書かない。check:docs は HARNESS_TODAY を付けずに
+#   1 検査の一式（1/<段の名前>）: stack-adapter.sh stages が出す段を読み取り、段ごとに stack-adapter.sh run-stage で別々に
+#     実行し、失敗しても続ける。段ごとの終了コードと所要秒だけを書き、出力は書かない。段は HARNESS_TODAY を付けずに
 #     実行する。終了コードが 0 でない段を要対応にする。
 #   2 文書の鮮度（2/<文書のパス>）: AGENTS.md の文書の地図のうちファイルを指す行について、文書の最後の変更の日と、文書の中に
-#     バッククォートで書かれた実在するパス（check-docs.sh の検査 7 と同じ形）の数と、文書の最後の変更より後にそれらの
+#     バッククォートで書かれた実在するパス（check-docs.sh --print arch-path-re の形）の数と、文書の最後の変更より後にそれらの
 #     パスを変えたコミットの数を書く。要対応にはしない（参考）。地図のパスと文書の中のパスのうち、/ で始まるもの、
 #     .. を含むもの、使えない文字を含むものは扱わない（報告に書かず、git にも渡さない）。
 #   3 技術的負債の一覧（3/<TD-n>、3/表）: 各行の場所のパス、見つけた日からの日数、場所のファイルの有無、見つけた日より後に
@@ -18,28 +25,30 @@
 #     「無い（リポジトリの外を指す）」として git に渡さない（パスは書くので、/ で始まるものは公開の検査で止まる）。
 #     一覧の表の見出しの行（TD_HEADER）、列の数、識別子の形、見つけた日の形に合わない行があれば 3/表 を要対応にする。
 #   4 品質目標の評価（4/領域:<領域>、4/層:<層>、4/表）: 「現在の評価」の各行の、評価した日からの日数と、その行の検査の
-#     識別子ごとの項目 1 の結果（識別子が check に無ければ「照合しない」）。評価した日から見直しの目安の日数を超えた行と、
-#     評価が A か B なのに識別子の段のどれかが失敗した行を要対応にする。目標の表と「現在の評価」の 2 つの表の書式
-#     （見出しの行、列の数、識別子が scripts にあること、評価が A〜D、日付が YYYY-MM-DD）に合わない行があれば、4/表 を
+#     識別子ごとの項目 1 の結果（識別子が段に無ければ「照合しない」）。評価した日から見直しの目安の日数を超えた行と、
+#     評価が A か B なのに識別子の段のどれかが失敗した行を要対応にする。表は見出しの列の名前で読む（目標の表は「検査の識別子」、
+#     「現在の評価」の表は「領域」か「層」・「評価」・「検査の識別子」・「評価した日」が要り、「評価したコミット」はあれば読む。
+#     ほかの列があってもよい）。「領域」の表は 1 つ要り、「層」の表は省ける。表の書式（要る列、列の数、識別子が stages の
+#     SCRIPT にあること、評価が A〜D、日付が YYYY-MM-DD）に合わない行があれば、4/表 を
 #     要対応にし、その行は照合しない。セルは前後の空白を除き、識別子はバッククォートを外した文字列として読む。
 #     名前のセルが、使えない文字（英数字、/._:- と空白、日本語のほかの文字）を含むか長すぎる行も 4/表 に回す。
 #   3 と 4 の表は共通に、見出しの直後が列の数の同じ区切り行（|---| の形）でない表、制御文字（0x00〜0x1f と 0x7f）を含む行を
 #     読まずに 3/表・4/表 にする。中間のファイルで区切りに使う 0x1f で欄をずらされないよう、分けた後にも各欄の形を確かめ直す。
 #   2 と 3 で読むパスは、シンボリックリンク（親ディレクトリのリンクを含む）を解決した実体がリポジトリの根の下にあるものだけ。
 #   5 実行の情報（5/<項目>）: 契機（GITHUB_ACTIONS が無いときは local）、日時（UTC）、対象のコミット、間隔の日数
-#     （ワークフローの注釈の行から読む）、成果物の保存期間、origin/main（走査の前に git fetch origin main で取る）の
+#     （ワークフローの注釈の行から読む）、成果物の保存期間、origin/<既定のブランチ>（走査の前に git fetch で取る）の
 #     最後のコミットからの日数、試験の差し替えの有無。日数が STALE_REMOTE_DAYS（45）日以上と、試験の差し替えが「あり」を
 #     要対応にする。
 #
 # 報告に書くのは、識別子・リポジトリの根からの相対のパス・日付・日数・数・終了コード・印だけにする。コミットの作者、
 # コマンドの出力、文書の本文の抜粋、環境変数の値は書かない。報告は一時ディレクトリに書き、公開してよいかの検査（置き場に
 # report.md 以外のファイルが無い、絶対パスの形・CI の作業ディレクトリと一時ディレクトリのパス・メールアドレスの形・
-# secretlint の規則に当たる値が無い、表の値が / か ~ で始まらない）を通ったときだけ --out へ移す。通らなければ報告を消して
+# 秘匿値の検査の規則に当たる値が無い、表の値が / か ~ で始まらない）を通ったときだけ --out へ移す。通らなければ報告を消して
 # 終了コード 3 で終わる（どの形に当たったかだけを標準エラーに出し、値は出さない）。
 #
 # 終了コード: 0 = 報告を書いた（所見があっても 0）。2 = 走査を続けられない（引数の誤り、--out が空でない、git の履歴が
-# 無い、package.json を読めない、check の形を読めない、ワークフローの注釈と cron が合わないなど）。3 = 公開してよいかの
-# 検査に通らない。
+# 無い、段の読み取りの部品や秘匿値の検査の部品が無い、段を読めない、ワークフローの注釈と cron が合わないなど）。
+# 3 = 公開してよいかの検査に通らない。
 #
 # 試験のための差し替え（scripts/harness/drift-scan.test.sh だけが使う。本物の実行では付けない）:
 #   DRIFT_SCAN_TEST_TODAY=YYYY-MM-DD        基準の日（日数を数える日）
@@ -49,13 +58,16 @@
 # /bin/bash（macOS では 3.2）で動く書き方だけを使う。
 set -euo pipefail
 
-# 段の実行には、呼ばれたときのロケールを戻す（npm run check と同じ条件で動かすため）
+# 段の実行には、呼ばれたときのロケールを戻す（手元で検査の一式を流すときと同じ条件で動かすため）
 ORIG_LC_ALL_SET="${LC_ALL+set}"
 ORIG_LC_ALL="${LC_ALL-}"
 export LC_ALL=C
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+ROOT="$(cd "$HERE/../.." && pwd)"
 WORKFLOW=".github/workflows/drift-scan.yml"
+ADAPTER="scripts/harness/stack-adapter.sh"
+SECRETS="scripts/harness/check-secrets.sh"
 STALE_REMOTE_DAYS=45
 MAX_RETENTION_DAYS=90
 
@@ -140,30 +152,30 @@ days_since() {
   if [ -n "$n" ]; then echo $((TODAY_NUM - n)); fi
 }
 
-# --- 前提: git の履歴、package.json、ワークフローの注釈
+# --- 前提: git の履歴、部品、設定、ワークフローの注釈
 g rev-parse --verify -q HEAD >/dev/null || die "git の履歴がありません"
 HEAD_SHA="$(g rev-parse HEAD)"
 
-[ -f package.json ] || die "package.json がありません"
-# scripts の名前（SCRIPT）と、check に並ぶ段（STAGE）を読む。check は「npm run <名前>」を && でつないだ形だけを受け取る
-node -e '
-  const fs = require("fs");
-  let p;
-  try { p = JSON.parse(fs.readFileSync("package.json", "utf8")); } catch { process.exit(3); }
-  const s = p && p.scripts;
-  if (!s || typeof s !== "object" || typeof s.check !== "string") process.exit(4);
-  const out = [];
-  for (const name of Object.keys(s)) out.push("SCRIPT\t" + name);
-  for (const part of s.check.split("&&")) {
-    const m = /^npm run ([A-Za-z0-9:._-]+)$/.exec(part.trim());
-    if (!m || !(m[1] in s) || m[1] === "check") process.exit(5);
-    out.push("STAGE\t" + m[1]);
-  }
-  process.stdout.write(out.join("\n") + "\n");
-' >"$TMP/scripts.tsv" || die "package.json の scripts と check を読めません（check は「npm run <名前>」を && でつないだ形で書きます）"
+{ [ -f "$ADAPTER" ] && [ ! -L "$ADAPTER" ]; } ||
+  die "段の読み取りの部品（harness-stack）がありません（${ADAPTER}。技術に合う部品を project-harness-init で足す）"
+{ [ -f "$SECRETS" ] && [ ! -L "$SECRETS" ]; } ||
+  die "秘匿値の検査の部品（secrets-check）がありません（${SECRETS}。報告を公開する前の確かめができないので、報告を書かない）"
+# 既定のブランチは、文書の検査が読んだ設定の値を使う（設定の読み方を 1 か所にするため）
+DEFAULT_BRANCH="$(bash "$HERE/check-docs.sh" --print conf default_branch 2>/dev/null)" && [ -n "$DEFAULT_BRANCH" ] \
+  || die "harness.conf の default_branch を読めません（bash scripts/harness/check-docs.sh で設定の誤りを確かめる）"
+case "$DEFAULT_BRANCH" in -*) die "harness.conf の default_branch が - で始まっています" ;; esac
+git check-ref-format --branch "$DEFAULT_BRANCH" >/dev/null 2>&1 || die "harness.conf の default_branch がブランチの名前の形ではありません"
+# 検査 7 と同じ、文書に書かれたパスを拾う形（写しを持たず、文書の検査から読む）
+CHECK7_RE="$(bash "$HERE/check-docs.sh" --print arch-path-re 2>/dev/null)" && [ -n "$CHECK7_RE" ] ||
+  die "文書の検査（check-docs.sh --print arch-path-re）から、パスを拾う形を読めません"
+# 段の名前（SCRIPT）と、検査の一式に並ぶ段（STAGE）を、部品から読む
+rc=0
+bash "$ADAPTER" stages </dev/null >"$TMP/scripts.tsv" 2>/dev/null || rc=$?
+[ "$rc" = 0 ] || die "段の読み取りの部品（$ADAPTER stages）が段を読めません（終了コード ${rc}。決まりは部品の文書）"
 awk -F'\t' '$1 == "SCRIPT" { print $2 }' "$TMP/scripts.tsv" >"$TMP/script-names"
 awk -F'\t' '$1 == "STAGE" { print $2 }' "$TMP/scripts.tsv" >"$TMP/stages"
-[ -s "$TMP/stages" ] || die "package.json の check に段がありません"
+[ -s "$TMP/stages" ] || die "段の読み取りの部品が、段を 1 つも出しません"
+if grep -vE '^[A-Za-z0-9:._-]+$' "$TMP/stages" >/dev/null; then die "段の読み取りの部品が出した段の名前に、使えない文字があります"; fi
 
 [ -f "$WORKFLOW" ] || die "ワークフローのファイル $WORKFLOW がありません"
 INTERVAL="$(sed -n 's/^# 間隔の日数: \([0-9][0-9]*\)$/\1/p' "$WORKFLOW")"
@@ -181,7 +193,7 @@ cron_days="$(printf '%s\n' "$cron_expr" | awk '
   }')"
 [ -n "$cron_days" ] || die "$WORKFLOW の cron を読めません（読めるのは、毎日と毎週の形だけです）"
 [ "$cron_days" = "$INTERVAL" ] ||
-  die "$WORKFLOW の注釈の間隔の日数（$INTERVAL）と、cron の間隔（$cron_days 日）が合いません"
+  die "$WORKFLOW の注釈の間隔の日数（${INTERVAL}）と、cron の間隔（$cron_days 日）が合いません"
 
 RETENTION="なし（CI の外の実行）"
 if [ -n "${DRIFT_SCAN_RETENTION_DAYS:-}" ]; then
@@ -205,19 +217,19 @@ else
 fi
 TARGET="$HEAD_SHA"
 if [ "$TRIGGER" = "pull_request" ]; then
-  TARGET="$HEAD_SHA（pull request を base に合わせた試しのマージのコミット）"
+  TARGET="${HEAD_SHA}（pull request を base に合わせた試しのマージのコミット）"
 fi
 
-# origin/main の最後のコミット。取れなければ、手元の追跡ブランチを使う（それも無ければ続けない）
+# origin/<既定のブランチ> の最後のコミット。取れなければ、手元の追跡ブランチを使う（それも無ければ続けない）
 FETCH_NOTE=""
 if ! GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o BatchMode=yes}" \
-  g fetch --quiet --no-tags origin main >/dev/null 2>&1; then
+  g fetch --quiet --no-tags origin "$DEFAULT_BRANCH" >/dev/null 2>&1; then
   FETCH_NOTE="。git fetch に失敗したので、手元の追跡ブランチの値"
 fi
-g rev-parse --verify -q refs/remotes/origin/main >/dev/null || die "origin/main の追跡ブランチがありません"
-REMOTE_DATE="$(g log -1 --format=%cs refs/remotes/origin/main)"
+g rev-parse --verify -q "refs/remotes/origin/$DEFAULT_BRANCH" >/dev/null || die "origin/$DEFAULT_BRANCH の追跡ブランチがありません"
+REMOTE_DATE="$(g log -1 --format=%cs "refs/remotes/origin/$DEFAULT_BRANCH")"
 REMOTE_DAYS="$(days_since "$REMOTE_DATE")"
-[ -n "$REMOTE_DAYS" ] || die "origin/main の最後のコミットの日付を読めません"
+[ -n "$REMOTE_DAYS" ] || die "origin/$DEFAULT_BRANCH の最後のコミットの日付を読めません"
 
 # --- 報告の部品。各行は「| `<行の識別子>` | ... | <印> |」の形。要対応の行を書くたびに ATTN を 1 つ増やす
 ATTN=0
@@ -231,7 +243,7 @@ only_chars() { # 引数: 値、許す文字の集合
 }
 # 品質目標の名前（英数字、/._:- と空白、日本語などの 0x80 以上のバイト）
 safe_name() { only_chars "$1" 'A-Za-z0-9/._: \200-\377-'; }
-# 報告に書いてよいパスの文字（英数字と /._:-）
+# 報告に書いてよいパスの文字（英数字と「/」「.」「_」「:」「-」）
 path_chars() { only_chars "$1" 'A-Za-z0-9/._:-'; }
 # リポジトリの中の相対のパスとして git に渡してよいか（/ や ~ で始まらず、.. の部分を含まない）
 inside_repo() {
@@ -242,19 +254,19 @@ inside_repo() {
 repo_path() { path_chars "$1" && inside_repo "$1"; }
 # パスの実体の置き場を分ける（標準入力の各行のパスを、リポジトリの根から解決する）。出力は「状態<TAB>パス」で、状態は
 # in（シンボリックリンクを親ディレクトリの分まで解決した実体が、リポジトリの根の下にある）、out（根の外にある）、
-# none（無い。リンク先が無い場合を含む）。realpath のコマンドは macOS と ubuntu で有無と動きが違うので、node で解決する
+# none（無い。リンク先が無い場合を含む）。realpath のコマンドは macOS と ubuntu で有無と動きが違うので、perl で解決する
 classify_paths() {
-  node -e '
-    const fs = require("fs"), path = require("path");
-    const root = fs.realpathSync(process.argv[1]);
-    const lines = fs.readFileSync(0, "utf8").split("\n").filter((l) => l !== "");
-    for (const p of lines) {
-      let st = "none";
-      try {
-        const r = fs.realpathSync(path.resolve(root, p));
-        st = r === root || r.startsWith(root + path.sep) ? "in" : "out";
-      } catch {}
-      process.stdout.write(st + "\t" + p + "\n");
+  perl -MCwd=realpath -e '
+    my $root = realpath($ARGV[0]);
+    while (my $p = <STDIN>) {
+      chomp $p;
+      next if $p eq "";
+      my $st = "none";
+      if (-e "$root/$p") {
+        my $r = realpath("$root/$p");
+        $st = (defined $r && ($r eq $root || index($r, "$root/") == 0)) ? "in" : "out";
+      }
+      print "$st\t$p\n";
     }' "$ROOT"
 }
 
@@ -269,7 +281,7 @@ run_stage() {
   (
     if [ "$ORIG_LC_ALL_SET" = "set" ]; then export LC_ALL="$ORIG_LC_ALL"; else unset LC_ALL; fi
     unset HARNESS_TODAY
-    npm run --silent "$1"
+    bash "$ADAPTER" run-stage "$1"
   ) </dev/null >/dev/null 2>&1
 }
 while IFS= read -r stage; do
@@ -307,8 +319,6 @@ while IFS="$(printf '\t')" read -r stage code secs; do
 done <"$TMP/stage-results"
 
 # --- 項目 2 文書の鮮度
-# check-docs.sh の検査 7 の正規表現の写し（向こうを変えたら、ここも同じ変更で直す。一致は drift-scan.test.sh の試験「写し 1」が確かめる）
-CHECK7_RE='^(src|docs|scripts|\.github|templates)/|^[A-Za-z0-9._-]+\.(md|cjs|mjs|ts|json|yml)$'
 {
   echo "## 2 文書の鮮度"
   echo
@@ -443,19 +453,17 @@ done <"$TMP/td-raw"
 if [ -s "$TMP/td-err" ]; then
   ATTN=$((ATTN + 1))
   why="$(sort -n "$TMP/td-err" | awk -F'\t' '{ printf "%s%s%s", (NR > 1 ? "。" : ""), ($1 == 0 ? "" : $1 " 行: "), $2 }')"
-  echo "| \`3/表\` | - | - | 技術的負債の一覧の表を読めない（$why） | - | 要対応 |" >>"$TMP/sec3"
+  echo "| \`3/表\` | - | - | 技術的負債の一覧の表を読めない（${why}） | - | 要対応 |" >>"$TMP/sec3"
 fi
 
 # --- 項目 4 品質目標の評価
 QS="docs/QUALITY_SCORE.md"
-GOAL_HEADER='| 目標 | 測る項目 | 確かめ方 | 検査の識別子 |'
-T1_HEADER='| 領域 | 評価 | 検査の識別子 | 根拠 | 評価した日 | 評価したコミット |'
-T2_HEADER='| 層 | 評価 | 検査の識別子 | 人が確かめる決まりの数 | 根拠 | 評価した日 | 評価したコミット |'
 : >"$TMP/qs"
 if [ -f "$QS" ]; then
   # 出力: REVIEW\t<日数> / ERR\t<行>\t<理由> / ROW<区切り><領域|層><区切り><名前><区切り><評価><区切り>
-  #       <識別子をコンマで><区切り><日付><区切り><行>（識別子は空のことがあるので、ROW だけ区切りを SEP にする）
-  awk -v gh="$GOAL_HEADER" -v h1="$T1_HEADER" -v h2="$T2_HEADER" -v sep="$SEP" '
+  #       <識別子をコンマで><区切り><日付><区切り><コミット（列が無ければ -）><区切り><行>
+  #       （識別子は空のことがあるので、ROW だけ区切りを SEP にする）。表は見出しの列の名前で読む
+  awk -v sep="$SEP" '
     function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
     function err(msg) { printf "ERR\t%d\t%s\n", FNR, msg }
     # 識別子のセルを読む。正しければコンマで区切った識別子（- のときは空）、誤りなら "!"
@@ -478,12 +486,19 @@ if [ -f "$QS" ]; then
     /^\|/ {
       line = $0; sub(/[ \t]+$/, "", line)
       if (!intable) { intable = 1; header = line; rowno = 0; hcols = split(line, hc, "|") - 2
-        if (sec == "## 目標") { goalseen = 1; kind = (header == gh) ? "goal" : "bad"
-          if (kind == "bad") err("目標の表の見出しの行が決まった形と違う") }
+        delete col
+        for (i = 2; i <= hcols + 1; i++) { x = trim(hc[i]); if (x != "" && !(x in col)) col[x] = i }
+        if (sec == "## 目標") { goalseen = 1; kind = ("検査の識別子" in col) ? "goal" : "bad"
+          if (kind == "bad") err("目標の表に「検査の識別子」の列が無い") }
         else if (sec == "## 現在の評価") {
-          if (header == h1) { kind = "t1"; t1seen = 1 }
-          else if (header == h2) { kind = "t2"; t2seen = 1 }
-          else { kind = "bad"; err("現在の評価の表の見出しの行が決まった形と違う") }
+          if ("領域" in col) { kind = "t1"; t1seen++; cn = col["領域"] }
+          else if ("層" in col) { kind = "t2"; cn = col["層"] }
+          else { kind = "bad"; err("現在の評価の表に「領域」か「層」の列が無い") }
+          if (kind != "bad") {
+            if (!("評価" in col) || !("検査の識別子" in col) || !("評価した日" in col)) {
+              kind = "bad"; err("現在の評価の表に「評価」「検査の識別子」「評価した日」の列のどれかが無い")
+            } else { cr = col["評価"]; ci = col["検査の識別子"]; cd = col["評価した日"]; cc = ("評価したコミット" in col) ? col["評価したコミット"] : 0 }
+          }
         } else kind = "other"
         next }
       rowno++
@@ -496,19 +511,17 @@ if [ -f "$QS" ]; then
       # 制御文字（中間のファイルの区切りを含む）のある行は読まない
       if (line ~ /[[:cntrl:]]/) { err("表の行に制御文字がある"); next }
       n = split(line, c, "|"); cols = n - 2
+      if (cols != hcols) { err("表の列の数が見出しと違う"); next }
       if (kind == "goal") {
-        if (cols != 4) { err("目標の表の列の数が違う"); next }
-        if (ids(c[5]) == "!") err("目標の表の識別子が scripts に無いか、書き方が違う")
+        if (ids(c[col["検査の識別子"]]) == "!") err("目標の表の識別子が段の名前に無いか、書き方が違う")
         next }
-      want = (kind == "t1") ? 6 : 7
-      if (cols != want) { err("現在の評価の表の列の数が違う"); next }
-      name = trim(c[2]); gsub(/`/, "", name); name = trim(name)
-      rating = trim(c[3]); idl = ids(c[4]); d = trim(c[want]); cm = trim(c[want + 1])
+      name = trim(c[cn]); gsub(/`/, "", name); name = trim(name)
+      rating = trim(c[cr]); idl = ids(c[ci]); d = trim(c[cd]); cm = cc ? trim(c[cc]) : "-"
       if (name == "") { err("現在の評価の表の名前のセルが空"); next }
       if (rating !~ /^[ABCD]$/) { err("現在の評価の表の評価が A〜D でない"); next }
-      if (idl == "!") { err("現在の評価の表の識別子が scripts に無いか、書き方が違う"); next }
+      if (idl == "!") { err("現在の評価の表の識別子が段の名前に無いか、書き方が違う"); next }
       if (d !~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$/) { err("現在の評価の表の評価した日が YYYY-MM-DD でない"); next }
-      if (cm !~ /^[0-9a-f]+$/ || length(cm) < 7 || length(cm) > 40) { err("現在の評価の表の評価したコミットが 16 進の 7〜40 字でない"); next }
+      if (cc && (cm !~ /^[0-9a-f]+$/ || length(cm) < 7 || length(cm) > 40)) { err("現在の評価の表の評価したコミットが 16 進の 7〜40 字でない"); next }
       printf "ROW%s%s%s%s%s%s%s%s%s%s%s%s%s%d\n", sep, (kind == "t1" ? "領域" : "層"), sep, name, sep, rating, sep, idl, sep, d, sep, cm, sep, FNR
       next }
     { intable = 0
@@ -516,8 +529,7 @@ if [ -f "$QS" ]; then
         v = $0; sub(/^見直しの目安: /, "", v); sub(/ 日.*$/, "", v); review = v; reviewcount++ } }
     END {
       if (!goalseen) print "ERR\t0\t目標の表が無い"
-      if (!t1seen) print "ERR\t0\t現在の評価の表 1 が無い"
-      if (!t2seen) print "ERR\t0\t現在の評価の表 2 が無い"
+      if (t1seen != 1) print "ERR\t0\t現在の評価に「領域」の列の表がちょうど 1 つない"
       if (reviewcount != 1) print "ERR\t0\t「見直しの目安: <数> 日」の行がちょうど 1 行ない"
       else print "REVIEW\t" review
     }' "$TMP/script-names" "$QS" >"$TMP/qs"
@@ -550,7 +562,7 @@ while IFS="$SEP" read -r tag kind name rating idl d cm lineno extra; do
   printf '%s' "$rating" | grep -Eq '^[ABCD]$' || bad_field=1
   printf '%s' "$idl" | grep -Eq '^([A-Za-z0-9:._-]+(,[A-Za-z0-9:._-]+)*)?$' || bad_field=1
   printf '%s' "$d" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' || bad_field=1
-  printf '%s' "$cm" | grep -Eq '^[0-9a-f]{7,40}$' || bad_field=1
+  printf '%s' "$cm" | grep -Eq '^([0-9a-f]{7,40}|-)$' || bad_field=1
   if [ "$bad_field" = 1 ]; then
     printf '%s\t%s\n' "$lineno" "現在の評価の表の行の欄の形が違う" >>"$TMP/qs-err"
     continue
@@ -588,7 +600,7 @@ while IFS="$SEP" read -r tag kind name rating idl d cm lineno extra; do
   reasons=""
   if [ -n "$REVIEW_DAYS" ] && [ "$days" -gt "$REVIEW_DAYS" ]; then reasons="見直しの目安を超えた"; fi
   case "$rating" in
-    A | B) [ "$failed" = 1 ] && reasons="${reasons:+$reasons。}評価が $rating なのに識別子の段が失敗した" ;;
+    A | B) [ "$failed" = 1 ] && reasons="${reasons:+${reasons}。}評価が $rating なのに識別子の段が失敗した" ;;
   esac
   if [ -n "$reasons" ]; then
     m="要対応"
@@ -603,7 +615,7 @@ done <"$TMP/qs"
 if [ -s "$TMP/qs-err" ]; then
   ATTN=$((ATTN + 1))
   why="$(sort -n "$TMP/qs-err" | awk -F'\t' '{ printf "%s%s%s", (NR > 1 ? "。" : ""), ($1 == 0 ? "" : $1 " 行: "), $2 }')"
-  echo "| \`4/表\` | - | - | - | 品質目標の表を読めない（$why） | 要対応 |" >>"$TMP/sec4"
+  echo "| \`4/表\` | - | - | - | 品質目標の表を読めない（${why}） | 要対応 |" >>"$TMP/sec4"
 fi
 
 # --- 項目 5 実行の情報
@@ -631,7 +643,7 @@ fi
   echo "| \`5/対象のコミット\` | $TARGET | 参考 |"
   echo "| \`5/間隔\` | $INTERVAL 日 | 参考 |"
   echo "| \`5/保存期間\` | $RETENTION | 参考 |"
-  echo "| \`5/origin-main\` | 最後のコミットから $REMOTE_DAYS 日（$REMOTE_DATE$FETCH_NOTE） | $m_remote |"
+  echo "| \`5/origin-既定のブランチ\` | 最後のコミットから $REMOTE_DAYS 日（$REMOTE_DATE${FETCH_NOTE}） | $m_remote |"
   echo "| \`5/試験の差し替え\` | $TEST_OVERRIDE | $m_override |"
 } >"$TMP/sec5"
 
@@ -655,11 +667,11 @@ REPORT="$TMP/out/report.md"
 ## この報告の書式
 
 - 定期の走査（`scripts/harness/drift-scan.sh`）が作った報告である。1 行めは、印が「要対応」の行の数。
-- 各行の 1 列めは行の識別子で、`<項目の番号>/<対象>` の形。項目は、1 検査の一式（`npm run check` の段）、2 文書の鮮度
+- 各行の 1 列めは行の識別子で、`<項目の番号>/<対象>` の形。項目は、1 検査の一式（`scripts/harness/stack-adapter.sh` が出す段）、2 文書の鮮度
   （`AGENTS.md` の文書の地図のファイル）、3 技術的負債の一覧（`3/<TD-n>`、表の書式の `3/表`、表に行が無いときの `3/なし`）、
   4 品質目標の評価（`4/領域:<領域>`、`4/層:<層>`、表の書式の `4/表`）、5 実行の情報。対象の名前のバッククォートは外してある。
 - 印は、「要対応」（走査の決まりで対応が要ると判定した行）、「参考」（判定の材料）、「照合しない」のどれか。「照合しない」は、
-  識別子が `npm run check` の段に無いか識別子が無いため、段の結果と照らさなかった行で、評価した日からの日数の判定は済んでいる
+  識別子が検査の一式の段に無いか識別子が無いため、段の結果と照らさなかった行で、評価した日からの日数の判定は済んでいる
   （見直しの目安を超えていれば要対応になる）。印は走査の機械的な判定で、実装と読み比べて確かめ直す。
 - 値の意味: 「-」は、値が無いか数えなかったこと。「未コミット」は、文書がまだコミットされていないこと。「日付を読めない」は、
   見つけた日が YYYY-MM-DD の形の暦にある日付でないこと（`3/表` にも理由を書く）。「無い（場所を読めない）」は、場所が
@@ -667,7 +679,7 @@ REPORT="$TMP/out/report.md"
   場所が `..` を含むか `/` で始まること。
 - 要対応にする条件: 1 は終了コードが 0 でない段。3 は場所のファイルが無い行と、表を読めないとき（3/表）。4 は評価した日から
   見直しの目安の日数を超えた行と、評価が A か B なのに識別子の段のどれかが失敗した行、表を読めないとき（4/表）。5 は
-  origin/main の最後のコミットから @STALE_REMOTE_DAYS@ 日以上（公開リポジトリの予定実行は、60 日活動が無いと止まる）と、
+  origin の既定のブランチの最後のコミットから @STALE_REMOTE_DAYS@ 日以上（公開リポジトリの予定実行は、60 日活動が無いと止まる）と、
   試験の差し替えが「あり」。2 は要対応にしない。
 - 書くのは、識別子、リポジトリの根からの相対のパス、日付、日数、数、終了コード、印だけ。検査の出力は書かない。失敗した段の
   中身は、依頼元が同じコマンドを実行して得る。依頼文に無ければ、点検できなかった範囲とする。
@@ -695,25 +707,16 @@ if awk -F'|' '/^\|/ {
   } END { exit bad ? 0 : 1 }' "$REPORT"; then
   add_fail "表の値が / か ~ で始まる"
 fi
-SECRETLINT="$ROOT/node_modules/.bin/secretlint"
-if [ ! -x "$SECRETLINT" ]; then
-  add_fail "secretlint が無く、秘匿値の検査ができない（先に npm ci を実行する）"
-else
-  # 除外の設定は、空のファイルを絶対パスで渡す（置き場の .secretlintignore を読ませないため）
-  : >"$TMP/secretlintignore-empty"
-  sl_rc=0
-  "$SECRETLINT" --secretlintrc "$ROOT/.secretlintrc.json" --secretlintignore "$TMP/secretlintignore-empty" \
-    --no-gitignore --no-glob --format json --output "$TMP/secretlint.json" -- "$REPORT" >/dev/null 2>&1 || sl_rc=$?
-  found="$(node -e '
-    const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
-    process.stdout.write(String(r.reduce((n, x) => n + x.messages.length, 0)));
-  ' "$TMP/secretlint.json" 2>/dev/null || echo "!")"
-  if [ "$sl_rc" != 0 ] || [ "$found" = "!" ]; then
-    add_fail "secretlint の検査が異常終了した"
-  elif [ "$found" != 0 ]; then
-    add_fail "secretlint の規則に当たる値"
-  fi
-fi
+# 秘匿値の確かめは、部品の秘匿値の検査に報告のファイルだけを渡す（0 = 無し、1 = 有り、ほかは道具が動かなかった）。
+# 道具が動かなかったときは、確かめていない報告を公開しないよう、報告を消して終了コード 2 で止める
+sl_rc=0
+bash "$SECRETS" --file "$REPORT" </dev/null >/dev/null 2>&1 || sl_rc=$?
+case "$sl_rc" in
+  0) ;;
+  1) add_fail "秘匿値の検査の規則に当たる値" ;;
+  *) rm -f -- "$REPORT"
+     die "秘匿値の検査が動きませんでした（終了コード ${sl_rc}）。報告を確かめられないので、報告を消しました" ;;
+esac
 if [ -n "$publish_fail" ]; then
   rm -f -- "$REPORT"
   printf 'drift-scan: 報告が公開してよいかの検査に通らないので、報告を消しました。当たった形:\n%s' "$publish_fail" >&2

@@ -12,7 +12,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/bin/bash \"$CLAUDE_PROJECT_DIR\"/scripts/harness/notify.sh claude",
+            "command": "/bin/bash \"$CLAUDE_PROJECT_DIR/scripts/harness/notify.sh\" claude",
             "timeout": 20
           }
         ]

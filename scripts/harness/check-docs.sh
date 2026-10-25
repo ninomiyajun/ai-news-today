@@ -1,9 +1,39 @@
 #!/usr/bin/env bash
-# 文書の検査。手元と CI で同じコマンドを使う: npm run check:docs
+# harness-copy: source=home/agents/skills/project-harness-init/assets/harness/check-docs.sh
+# harness-copy: version=rules-2026.10.25-1
+# harness-copy: sha256=16421b6204059c9c60cac1265b31e8991ff3dc863ac07a1ea8dc57f3c46ac8d7
+# harness-copy: この 4 行と本体は手で変えない。正本を直して project-harness-init の「導入済みのプロジェクトの更新」で置き換える
+# 文書の検査（ハーネスの検査の本体）。どのプロジェクトでも同じ中身の写しを scripts/harness/check-docs.sh に置く。
+# プロジェクトごとの値は、同じ置き場の設定のファイル harness.conf と、プロジェクトの文書から読む。プロジェクト専用の
+# 検査は、同じ置き場の checks.d/ に置く（このファイルを直さない）。
+#
+# 使い方:
+#   check-docs.sh                        自分の置き場（scripts/harness/）から根を決めて検査する
+#   check-docs.sh --root <絶対パス>       その git の作業ツリーの根を検査する（早期通知が、別の作業ツリーを検査する形）
+#   check-docs.sh --print arch-path-re    検査 7 が拾うパスの正規表現を 1 行で出す（定期の走査が使う）。検査はしない
+#   check-docs.sh --print checks          検査の短い名前を 1 行に 1 つ出す（下の 13 個と、追加の検査の口の名前）。検査はしない
+#   check-docs.sh --print conf <キー>     設定のキーの値を出す（1 回だけのキーは既定を補い、何行でも書けるキーは 1 行に 1 つ）
+# 設定、追加の検査（checks.d/）、必須のファイルの一覧は、どの呼び方でも起動元（このファイルの置き場）のものを使う。
+# 検査する作業ツリーは文書としてだけ読み、そこのファイルを実行も読み込みもしない（別のブランチが書き換えたスクリプトを、
+# 利用者の権限で動かさないため）。git の呼び出しには -c core.fsmonitor=false を付ける。
+#
+# 設定のファイル（scripts/harness/harness.conf）: 1 行に 1 つの「キー=値」。行頭が # の行と空の行は注釈として読み飛ばす。
+# 値の後ろに注釈を書けない（# も値の一部になる）。source しない。知らないキーと、1 回だけ書けるキーの重複は「設定の誤り」。
+#   format=1                       設定の書式の版（1 だけ）
+#   agents_max_lines=<整数>        AGENTS.md の行数の上限（検査 6。既定 120）
+#   required.<版>=<パス>           ハーネスの版ごとの必須のファイル（検査 1。1 行に 1 つ、何行でも。末尾が / はディレクトリ）
+#   claude_md_exact=yes|no         yes: CLAUDE.md が「@AGENTS.md」の 1 行と完全に一致する。no: その行があればよい（既定 no）
+#   arch_path_prefixes=<名前>...   検査 7 が拾うパスの先頭のディレクトリ（空白で区切る。既定 src docs scripts .github templates）
+#   arch_root_file_exts=<拡張子>... 検査 7 が拾う、根の直下のファイルの拡張子（空白で区切る。既定 md cjs mjs ts json yml）
+#   default_branch=<名前>          既定のブランチ（検査 12 の分岐元と、定期の走査が使う。既定 main）
+#   template_version=<版>          敷いたひな形の版（更新の手順が使う。検査はしない）
+#   part=<名前>                    敷いたときに採用した部品の名前（何行でも。更新の手順が使う。検査はしない）
+#   record_exempt_line_re=<正規表現>  検査 12 で記録を求めない行の置き換えの形（何行でも。perl の正規表現で、名前つきの捕獲
+#                                  (?<name>…) と版の部分の捕獲 (?<ver>…) を持つ）
 #
 # 確かめること:
-#   1. AGENTS.md に導入済みの印（「ハーネスの版: N」の 1 行）があり、その版で必須のファイルが実在する
-#   2. CLAUDE.md が「@AGENTS.md」の 1 行（末尾の改行を含む）と完全に一致する
+#   1. AGENTS.md に導入済みの印（「ハーネスの版: N」の 1 行）があり、その版で必須のファイル（設定の required.<版>）が実在する
+#   2. CLAUDE.md があるとき、「@AGENTS.md」だけの行がある（設定の claude_md_exact=yes なら、その 1 行と完全に一致する）
 #   3. AGENTS.md の「文書の地図」に書いたパスが実在する
 #   4. Markdown の相対リンクの先が実在する。対応する構文は、インラインのリンクと画像（[文字](先)、![文字](先)）で、
 #      先に空白も「)」も含まないものだけ。参照形式（[文字][名前] と [名前]: 先）、山括弧で囲んだ先、タイトル付きの先、
@@ -11,7 +41,7 @@
 #      一覧にあるのに検査できない Markdown（シンボリックリンク、読めないもの）は失敗にする
 #   5. docs/adr/ の ADR が、すべて目録（docs/adr/README.md）に載っている
 #   6. AGENTS.md の行数が上限以下
-#   7. ARCHITECTURE.md に書いたパス（src/、docs/、scripts/、.github/、templates/ で始まるものと、根のファイル名）が実在する
+#   7. ARCHITECTURE.md に書いたパスが実在する（拾う形は --print arch-path-re の正規表現）
 #   8. 進行中と完了の計画（docs/exec-plans/active/ と completed/ の直下の .md のうち、名前が .acceptance.md で
 #      終わらないもの）に、docs/PLANS.md の「必須の節」の一覧にある見出しが、すべて行として揃っている。
 #      ``` で囲んだコードブロックの中の行は見出しに数えない。
@@ -23,6 +53,8 @@
 #      - completed/ の計画のうち、ファイル名の日付が docs/PLANS.md の「新しい書式の適用開始: YYYY-MM-DD」以降のもの
 #        （日付で始まらない名前の計画も含める）: 検証の節の「### <識別子>」の見出しの下で、確かめ方が受け入れ確認の
 #        基準ごとに、記録の中の「確かめた者: app-evaluator」の実行のうち、その基準の行を持つ最も後の実行の結果が「合格」。
+#        ただし、計画の「## 進捗」の「### 状態の表」で、その基準の行（項目が <識別子> か「<識別子> (」で始まる行）の
+#        状態が「不合格」で、根拠に空でない「持ち越し: <先>」があれば失敗にしない（持ち越しが無いか空なら失敗にする）。
 #        あわせて、検証の節の書式（check_plan_verification）と、記録の書式（check_record_format）を確かめる。
 #      - 計画と記録のどちらも、``` で囲んだコードブロックの中の行は数えない
 #  10. 製品の仕様（書式と目録の正本は docs/product-specs/README.md）。
@@ -46,89 +78,174 @@
 #      仕様と計画のどちらも、``` で囲んだコードブロックの中の行は数えない
 #  11. 古い計画（決まりの正本は docs/PLANS.md の「置き場所と名前」）。進行中の計画（docs/exec-plans/active/ の直下の .md のうち、
 #      名前が .acceptance.md で終わらないもの）について、ファイル名の先頭の日付と、「## 進捗」の節の中の YYYY-MM-DD の形の
-#      日付のうち、最も新しい日付が、基準の日より STALE_PLAN_DAYS 日以上前なら失敗にする。基準の日の 1 日後より後の日付は
-#      数えない（予定の日付を、進めた日付と読み違えないため。手元と CI の時刻帯の差があるので、1 日後までは数える）。
-#      暦に無い日付（平年の 2 月 29 日、4 月 31 日など）と、前後に数字が続く並び（12026-10-07 など）も数えない。
+#      日付のうち、最も新しい日付が、基準の日より、docs/PLANS.md の「古い計画の日数: <整数>」の行の日数以上前なら失敗にする。
+#      基準の日の 1 日後より後の日付は数えない（予定の日付を、進めた日付と読み違えないため。手元と CI の時刻帯の差が
+#      あるので、1 日後までは数える）。暦に無い日付と、前後に数字が続く並び（12026-10-07 など）も数えない。
 #      数える日付が 1 つも無い計画も失敗にする。``` で囲んだコードブロックの中の行は数えない。completed/ の計画と、
-#      受け入れ確認の記録は対象にしない。
+#      受け入れ確認の記録は対象にしない。docs/PLANS.md に日数の行が無ければ失敗にする。
 #      基準の日は、環境変数 HARNESS_TODAY（YYYY-MM-DD。試験用）があればその日、無ければ実行した日。
 #      HARNESS_TODAY が暦にある日付でなければ失敗にする
-#  12. 文書の検査の一覧（正本は下の CHECK_NAMES）。次の 2 つの括弧書きが、CHECK_NAMES の名前を同じ順に「、」でつないだものと
-#      一致する（バッククォートは除いて比べる）:
-#      - AGENTS.md の「## 検査のコマンド」の表の、コマンドが `npm run check:docs` の行の 1 列目「文書（…）」の括弧書き
-#      - docs/QUALITY_SCORE.md の「## 目標」の表の、目標が「文書が実物と合っている」の行の測る項目の「文書の検査の不整合（…）」の括弧書き
-#      あわせて、この冒頭の一覧の検査の番号が 1 から欠けずに並び、その数が CHECK_NAMES の数と同じであることを確かめる。
-#      AGENTS.md に「## 検査のコマンド」の見出しの行が無いとき、docs/QUALITY_SCORE.md に「## 目標」の見出しの行が無いときも
-#      失敗にする（見出しを変えると検査が黙って働かなくなるため。検査 3 の「## 文書の地図」と同じ扱い）
-#  13. 通信の名前の一覧。eslint.config.mjs が無いときも失敗にする（同上）。
-#      - ARCHITECTURE.md の「## 不変条件」の 2 の括弧書き「（`http`、…、`dgram` と、それぞれに `node:` を付けた名前、`undici`）」
-#        を、「と、それぞれに `node:` を付けた名前、」の前の名前（node: 付きと無しの両方に展開する）と後の名前に分けて読んだ
-#        名前の集まりが、eslint.config.mjs の NETWORK_MODULE_BASES を node: 付きと無しに展開し、NETWORK_MODULES の行の末尾に
-#        足した名前を加えた集まりと一致する
-#      - ARCHITECTURE.md の「## 不変条件」の 1 の「通信のための大域の名前（`fetch`、…、`EventSource`。」の名前の集まりが、
-#        eslint.config.mjs の NETWORK_GLOBALS と一致する
-#      不変条件の続きの行（字下げした行）は空白 1 つを挟んでつなぎ、連続する空白は 1 つにそろえてから読む（折り返しの位置が
-#      空白に来ても読めるようにするため）。
-#      eslint.config.mjs は実行せず、文字列として読む（この検査は早期通知からも動くので、ほかのファイルを実行しないため）。
-#      コメントは解析しないので、3 つの定数のそれぞれについて、値を入れる書き方（「名前 =」）がファイル全体（コメントの中を
-#      含む）でちょうど 1 か所で、それが行頭から始まる「const 名前 = 」の行であることも確かめる。
-#      読み取りの前提（ARCHITECTURE.md の上の書き方と、eslint.config.mjs の 3 つの定数の行の形）が崩れたときは、黙って通さずに失敗にする
-#  14. 層の評価の上限。docs/QUALITY_SCORE.md の「## 現在の評価」の表 2（見出しの行に「人が確かめる決まりの数」の列がある表）で、
-#      人が確かめる決まりの数が 1 以上なのに評価が A の行があれば失敗にする（表 2 の直前の決まり「人が確かめる決まりの数が
-#      1 以上の層は、A にしない」）。列は、見出しの行の「評価」と「人が確かめる決まりの数」の名前で探す。
-#      節の見出しは、## の後と行末の空白（と閉じの # の並び）を除いた名前で比べる。読み取りの前提が崩れたとき
-#      （「## 現在の評価」の見出しの行が無いか 2 行以上ある、節の中に囲みのコードブロックの行（行頭の空白 0〜3 個の後に
-#      ``` か ~~~）がある、節の外（節の外の囲みのコードブロックの中は除く）に「人が確かめる決まりの数」の列を持つ表がある、
-#      表 2 が無いか 2 つ以上ある、表 2 の直後の行が空行でも縦線で始まる行でもない（GFM では行頭の縦線を省いた行も
-#      表の行として表示されうるので、見出しなど表を終える行が直後に来る場合も含めて失敗にする）、節の中に表 1 の見出し（drift-scan.sh の T1_HEADER と同じ）でも
-#      表 2 でもない表がある（表 2 の途中の空行で、続きの行が別の表になった形を含む）、見出しの行に「評価」の列がちょうど
-#      1 つ無い、見出しの直後が見出しと同じ列の数の区切りの行でない、行の列の数が見出しと違う、決まりの数が 0 以上の整数で
-#      ない、評価が A〜D の 1 字でない、表 2 に層の行が 1 行も無い）は、黙って通さずに失敗にする。
-#      docs/QUALITY_SCORE.md が無いときは調べない（検査 1 が失敗にする）
-# 失敗したときは、項目ごとに直し方を表示して、終了コード 1 で終わる。
+#  12. 検査の由来の記録。地図の「検査の由来の記録」の行が示す記録に、検査を定めるファイル（地図の 1 列目が「検査」か
+#      「検査（」で始まる行の、2 列目のバッククォートの中のパス。末尾が / なら、その下のすべて）を変えた変更が、記録の表の
+#      行を 1 行以上足している。比べる元は分岐元（環境変数 GITHUB_BASE_REF があれば origin/<その値> との merge-base で、
+#      求められなければ失敗にする。無ければ HARNESS_BASE_REF、origin/<既定のブランチ>、<既定のブランチ> の順の最初に
+#      あるものとの merge-base で、どれも無ければ調べない）。変えたファイルは、分岐元からの差分（作業ツリーを含む）と、
+#      除外されていない未追跡のファイル。調べないとき: 地図に「検査の由来の記録」の行が無い、分岐元の時点の AGENTS.md に
+#      導入済みの印が無い、分岐元の時点に記録のファイルが無い（導入の変更そのもの）。当たったファイルの差分が、どの塊でも、
+#      消した行と足した行が同じ数で、対になる行同士が設定の record_exempt_line_re の同じ規則に合い、名前の部分（name）が
+#      同じで、版の部分（ver）が違い、行から版の部分を除いた残りが同じ（版だけを置き換えた）ときは、記録を求めない
+#  13. 写しの中身。追跡しているファイルと除外されていない未追跡のファイルのうち、冒頭に harness-copy の行があるもの（写し）と、
+#      .md の区画の写し（begin の印の次の行が harness-copy の行の区画）について、冒頭の行の sha256 が、
+#      冒頭の行を除いた中身の sha256 と一致する（うっかりした編集を拾う。正本と同じであることの証明にはならない。
+#      正本と比べるのは project-harness-init の harness-copies.sh）
+# この 13 個の後に、追加の検査の口（起動元の scripts/harness/checks.d/ の *.sh のうち、名前が .test.sh で終わらないもの）を、
+# 名前の順に 1 つずつ実行する。決まりは checks.d/README.md（ファイルの 2 行目以降に「# 検査の名前: <短い名前>」をちょうど
+# 1 行。bash で呼び、作業ディレクトリは検査する根、標準入力は /dev/null。環境変数 HARNESS_ROOT と HARNESS_ENGINE_DIR を渡す。
+# 終了コード 0 は合格、1 は不合格で、出力の「check-docs: NG:」の行の数を件数に足す。ほかの終了コードは、実行できなかった
+# 1 件の失敗にする）。シンボリックリンクと、名前の行の無いものは失敗にする。
+#
+# 失敗したときは、項目ごとに直し方を表示して、終了コード 1 で終わる。引数の誤りは終了コード 2。
 set -euo pipefail
 export LC_ALL=C
 
-# 検査する根。引数が無ければ、自分の置き場から決める（npm run check:docs と CI の呼び出し）。
-# 引数 --root <絶対パス> があれば、その作業ツリーの根を検査する。早期通知（notify.sh）が、起動元のこのスクリプトで、
-# 別の作業ツリーの文書を検査するための形である。検査 1 の必須のファイルの一覧と、検査 11 の日数は、どちらの場合も
-# このスクリプトのものを使う。引数の値が、絶対パスでない、ディレクトリでない、git の作業ツリーの根でないときと、
-# 引数の形が違うときは、検査せずに終了コード 2 で終わる。
-# git の呼び出しには -c core.fsmonitor=false を付ける（検査する作業ツリーの設定で、ファイルの監視のプログラムを起動しないため）。
-bad_root() {
+usage_error() {
   echo "check-docs: NG: $1" >&2
-  echo "  使い方: check-docs.sh [--root <git の作業ツリーの根の絶対パス>]" >&2
+  echo "  使い方: check-docs.sh [--root <git の作業ツリーの根の絶対パス> | --print arch-path-re | --print checks | --print conf <キー>]" >&2
   exit 2
 }
+
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+CONF="$SELF_DIR/harness.conf"
+PRINT=""
+PRINT_KEY=""
 if [ "$#" -eq 0 ]; then
-  ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-else
-  if [ "$#" -ne 2 ] || [ "$1" != "--root" ]; then
-    bad_root "引数の形が違います（受け取るのは --root <絶対パス> だけです）"
-  fi
+  ROOT="$(cd "$SELF_DIR/../.." && pwd)"
+elif [ "$#" -eq 2 ] && [ "$1" = "--print" ]; then
+  case "$2" in
+    arch-path-re|checks) PRINT="$2" ;;
+    *) usage_error "--print の値が違います（arch-path-re か checks）" ;;
+  esac
+  ROOT=""
+elif [ "$#" -eq 3 ] && [ "$1" = "--print" ] && [ "$2" = conf ]; then
+  PRINT=conf; PRINT_KEY="$3"; ROOT=""
+elif [ "$#" -eq 2 ] && [ "$1" = "--root" ]; then
   ROOT="$2"
   case "$ROOT" in
     /*) ;;
-    *) bad_root "--root の値が絶対パスではありません" ;;
+    *) usage_error "--root の値が絶対パスではありません" ;;
   esac
-  [ -d "$ROOT" ] || bad_root "--root の値がディレクトリではありません"
+  [ -d "$ROOT" ] || usage_error "--root の値がディレクトリではありません"
   root_top="$(git -c core.fsmonitor=false -C "$ROOT" rev-parse --show-toplevel 2>/dev/null)" \
-    || bad_root "--root の値が git の作業ツリーの中ではありません"
+    || usage_error "--root の値が git の作業ツリーの中ではありません"
   if [ -z "$root_top" ] || [ "$(cd -- "$ROOT" && pwd -P)" != "$(cd -- "$root_top" && pwd -P)" ]; then
-    bad_root "--root の値が git の作業ツリーの根ではありません"
+    usage_error "--root の値が git の作業ツリーの根ではありません"
   fi
+else
+  usage_error "引数の形が違います"
 fi
-# このスクリプト自身の絶対パス（検査 12 が冒頭の一覧を読む。下で検査する根へ移る前に決める）
-SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
-cd -- "$ROOT"
 
-AGENTS_MAX_LINES=120
-# 進行中の計画を古いとみなす日数（検査 11）。変えるときは docs/PLANS.md の「置き場所と名前」も直す
-STALE_PLAN_DAYS=30
-# 検査の短い名前（検査 12）。番号の順に 1 行 1 つ（1 つ目が検査 1）。名前に「、」「（」「）」と「|」を使わない。
-# 文書の検査が何を確かめるかの一覧の正本はここだけで、AGENTS.md の検査のコマンドの表の check:docs の行と、
-# docs/QUALITY_SCORE.md の目標「文書が実物と合っている」の測る項目の括弧書きは、これを写したものにする。
-# 検査を足す・外すときは、冒頭の「確かめること」、ここ、2 つの文書の括弧書きを同じ変更で直す
+work_dir="$(mktemp -d)"
+trap 'rm -rf "$work_dir"' EXIT
+
+g() {
+  git -c core.fsmonitor=false -c core.quotePath=false "$@"
+}
+
+# --- 設定のファイル ---
+CONF_SINGLE_KEYS="format agents_max_lines claude_md_exact arch_path_prefixes arch_root_file_exts default_branch template_version"
+CONF_MULTI_KEYS="record_exempt_line_re part"
+conf_tsv="$work_dir/conf.tsv"
+conf_errors="$work_dir/conf-errors"
+: > "$conf_tsv"
+: > "$conf_errors"
+if [ -L "$CONF" ] || [ ! -f "$CONF" ]; then
+  echo "設定のファイル scripts/harness/harness.conf がありません（シンボリックリンクも受け付けません）" >> "$conf_errors"
+elif grep -q "$(printf '\r')" "$CONF"; then
+  echo "設定のファイルに CR（\\r）が含まれています（改行を LF にする）" >> "$conf_errors"
+else
+  awk -v single="$CONF_SINGLE_KEYS" -v multi="$CONF_MULTI_KEYS" -v errf="$conf_errors" '
+    BEGIN {
+      n = split(single, s, " "); for (i = 1; i <= n; i++) S[s[i]] = 1
+      n = split(multi, m, " "); for (i = 1; i <= n; i++) M[m[i]] = 1
+    }
+    /^#/ { next }
+    /^[ \t]*$/ { next }
+    {
+      e = index($0, "=")
+      if (e == 0) { print NR " 行目: 「キー=値」の形ではありません" > errf; next }
+      k = substr($0, 1, e - 1); v = substr($0, e + 1)
+      if (k ~ /^required\.[1-9][0-9]*$/ || (k in M)) { print k "\t" v; next }
+      if (k in S) {
+        if (seen[k]++) { print NR " 行目: キー " k " が 2 回以上あります（1 回だけ書けるキー）" > errf; next }
+        print k "\t" v; next
+      }
+      print NR " 行目: 知らないキー " k " があります" > errf
+    }
+  ' "$CONF" > "$conf_tsv"
+fi
+
+conf_get() { # <キー> [既定]: 1 回だけ書けるキーの値（無ければ既定）
+  local v
+  v="$(awk -F '\t' -v k="$1" '$1 == k { sub(/^[^\t]*\t/, ""); print; exit }' "$conf_tsv")"
+  if awk -F '\t' -v k="$1" '$1 == k { f = 1 } END { exit !f }' "$conf_tsv"; then printf '%s\n' "$v"; else printf '%s\n' "${2:-}"; fi
+}
+conf_all() { # <キー>: 何行でも書けるキーの値を 1 行に 1 つ
+  awk -F '\t' -v k="$1" '$1 == k { sub(/^[^\t]*\t/, ""); print }' "$conf_tsv"
+}
+conf_bad() { echo "$1" >> "$conf_errors"; }
+
+if [ ! -s "$conf_errors" ]; then
+  [ "$(conf_get format)" = 1 ] || conf_bad "format=1 の行がありません（設定の書式の版は 1 だけ）"
+  AGENTS_MAX_LINES="$(conf_get agents_max_lines 120)"
+  [[ "$AGENTS_MAX_LINES" =~ ^[1-9][0-9]*$ ]] || conf_bad "agents_max_lines の値「${AGENTS_MAX_LINES}」が 1 以上の整数ではありません"
+  CLAUDE_MD_EXACT="$(conf_get claude_md_exact no)"
+  case "$CLAUDE_MD_EXACT" in yes|no) ;; *) conf_bad "claude_md_exact の値「${CLAUDE_MD_EXACT}」が yes か no ではありません" ;; esac
+  ARCH_PREFIXES="$(conf_get arch_path_prefixes 'src docs scripts .github templates')"
+  [[ "$ARCH_PREFIXES" =~ ^[A-Za-z0-9._-]+( [A-Za-z0-9._-]+)*$ ]] \
+    || conf_bad "arch_path_prefixes の値「${ARCH_PREFIXES}」が、空白 1 つで区切った名前（英数字と ._-）の並びではありません"
+  ARCH_EXTS="$(conf_get arch_root_file_exts 'md cjs mjs ts json yml')"
+  [[ "$ARCH_EXTS" =~ ^[a-z0-9]+( [a-z0-9]+)*$ ]] \
+    || conf_bad "arch_root_file_exts の値「${ARCH_EXTS}」が、空白 1 つで区切った拡張子（英小文字と数字）の並びではありません"
+  while IFS= read -r v; do
+    [ -n "$v" ] || continue
+    [[ "$v" =~ ^[a-z0-9][a-z0-9-]*$ ]] || conf_bad "part の値「${v}」が部品の名前（英小文字・数字・ハイフン）ではありません"
+  done <<EOF
+$(conf_all part)
+EOF
+  DEFAULT_BRANCH="$(conf_get default_branch main)"
+  [[ "$DEFAULT_BRANCH" =~ ^[A-Za-z0-9._/-]+$ ]] && [[ "$DEFAULT_BRANCH" != -* ]] || conf_bad "default_branch の値「${DEFAULT_BRANCH}」に使えない文字があります"
+  while IFS="$(printf '\t')" read -r k v; do
+    case "$k" in
+      required.*)
+        case "$v" in
+          ''|/*|*..*) conf_bad "$k の値「${v}」が、リポジトリの根からの相対のパスではありません" ;;
+        esac ;;
+    esac
+  done < "$conf_tsv"
+  awk -F '\t' '$1 == "record_exempt_line_re" && $2 == "" { f = 1 } END { exit !f }' "$conf_tsv" \
+    && conf_bad "record_exempt_line_re の値が空です"
+  while IFS= read -r re; do
+    [ -n "$re" ] || continue
+    perl -e 'my $r = eval { qr/$ARGV[0]/ }; exit 2 unless defined $r; exit 3 unless $ARGV[0] =~ /\(\?<name>/ && $ARGV[0] =~ /\(\?<ver>/; exit 0' "$re" \
+      || conf_bad "record_exempt_line_re の値「${re}」が、名前つきの捕獲 (?<name>…) と (?<ver>…) を持つ perl の正規表現ではありません"
+  done <<EOF
+$(conf_all record_exempt_line_re)
+EOF
+fi
+: "${AGENTS_MAX_LINES:=120}" "${CLAUDE_MD_EXACT:=no}" "${ARCH_PREFIXES:=src docs scripts .github templates}" "${DEFAULT_BRANCH:=main}"
+: "${ARCH_EXTS:=md cjs mjs ts json yml}"
+
+# 検査 7 が拾うパスの正規表現（定期の走査も --print arch-path-re で同じものを使う）
+arch_path_re() {
+  local p alt="" exts
+  for p in $ARCH_PREFIXES; do
+    alt="${alt:+$alt|}$(printf '%s' "$p" | sed 's/\./\\./g')"
+  done
+  exts="$(printf '%s' "$ARCH_EXTS" | tr ' ' '|')"
+  printf '^(%s)/|^[A-Za-z0-9._-]+\\.(%s)$\n' "$alt" "$exts"
+}
+
+# 検査の短い名前（番号の順に 1 行 1 つ。1 つ目が検査 1）。名前に「、」「（」「）」と「|」を使わない
 CHECK_NAMES=(
   "必須のファイル"
   "CLAUDE.md"
@@ -141,10 +258,69 @@ CHECK_NAMES=(
   "受け入れ確認の記録"
   "製品の仕様の目録と状態"
   "古い計画"
-  "文書の検査の一覧"
-  "通信の名前の一覧"
-  "層の評価の上限"
+  "検査の由来の記録"
+  "写しの中身"
 )
+
+# 追加の検査の口のファイルを、名前の順に 1 行に 1 つ出す（*.test.sh を除く）
+extra_check_files() {
+  local f
+  for f in "$SELF_DIR/checks.d/"*.sh; do
+    [ -e "$f" ] || [ -L "$f" ] || continue
+    case "$f" in *.test.sh) continue ;; esac
+    printf '%s\n' "$f"
+  done
+}
+# 追加の検査のファイル $1 の名前（「# 検査の名前: 」の行がちょうど 1 行あれば、その値）。無ければ 1 を返す
+extra_check_name() {
+  local n
+  [ -f "$1" ] && [ ! -L "$1" ] || return 1
+  n="$(grep -c '^# 検査の名前: ..*$' "$1" || true)"
+  [ "$n" = 1 ] || return 1
+  sed -n 's/^# 検査の名前: \(..*\)$/\1/p' "$1"
+}
+
+if [ -n "$PRINT" ]; then
+  if [ -s "$conf_errors" ]; then
+    sed 's/^/check-docs: NG: 設定 scripts\/harness\/harness.conf の誤り: /' "$conf_errors" >&2
+    exit 2
+  fi
+  case "$PRINT" in
+    arch-path-re) arch_path_re ;;
+    conf)
+      case " $CONF_SINGLE_KEYS " in
+        *" $PRINT_KEY "*)
+          case "$PRINT_KEY" in
+            default_branch) printf '%s\n' "$DEFAULT_BRANCH" ;;
+            agents_max_lines) printf '%s\n' "$AGENTS_MAX_LINES" ;;
+            claude_md_exact) printf '%s\n' "$CLAUDE_MD_EXACT" ;;
+            arch_path_prefixes) printf '%s\n' "$ARCH_PREFIXES" ;;
+            arch_root_file_exts) printf '%s\n' "$ARCH_EXTS" ;;
+            *) conf_get "$PRINT_KEY" ;;
+          esac ;;
+        *)
+          case " $CONF_MULTI_KEYS " in
+            *" $PRINT_KEY "*) conf_all "$PRINT_KEY" ;;
+            *) case "$PRINT_KEY" in
+                 required.[1-9]*) conf_all "$PRINT_KEY" ;;
+                 *) usage_error "--print conf のキー ${PRINT_KEY} は設定のキーではありません" ;;
+               esac ;;
+          esac ;;
+      esac ;;
+    checks)
+      printf '%s\n' "${CHECK_NAMES[@]}"
+      while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        extra_check_name "$f" || true
+      done <<EOF
+$(extra_check_files)
+EOF
+      ;;
+  esac
+  exit 0
+fi
+
+cd -- "$ROOT"
 errors=0
 
 fail() {
@@ -153,38 +329,11 @@ fail() {
   errors=$((errors + 1))
 }
 
-# 版ごとの必須のファイル（末尾が / のものはディレクトリ）
-required_for_version() {
-  case "$1" in
-    1)
-      cat <<'EOF'
-AGENTS.md
-CLAUDE.md
-ARCHITECTURE.md
-.gitignore
-docs/adr/README.md
-docs/PLANS.md
-docs/exec-plans/active/
-docs/exec-plans/completed/
-docs/QUALITY_SCORE.md
-docs/quality-eval/README.md
-docs/quality-eval/tasks/
-docs/quality-eval/results/
-scripts/harness/check-docs.sh
-scripts/harness/check-arch.sh
-scripts/harness/check-secrets.sh
-scripts/harness/check-secrets.mjs
-.dependency-cruiser.cjs
-.secretlintrc.json
-.github/workflows/harness.yml
-.github/dependabot.yml
-EOF
-      ;;
-    *)
-      return 1
-      ;;
-  esac
-}
+while IFS= read -r e; do
+  [ -n "$e" ] || continue
+  fail "設定 scripts/harness/harness.conf の誤り: $e" \
+    "設定のファイルの書き方（scripts/harness/check-docs.sh の冒頭の「設定のファイル」）に合わせて直す。値の後ろに注釈を書かない（# も値の一部になる）"
+done < "$conf_errors"
 
 # 1. 導入済みの印と、必須のファイル
 if [ ! -f AGENTS.md ]; then
@@ -199,17 +348,18 @@ else
 fi
 
 if [ -n "$version" ]; then
-  if ! required="$(required_for_version "$version")"; then
+  required="$(conf_all "required.$version")"
+  if [ -z "$required" ]; then
     fail "ハーネスの版 $version の必須のファイルの一覧がありません" \
-      "scripts/harness/check-docs.sh の required_for_version に、版 $version の一覧を足す"
+      "scripts/harness/harness.conf に、版 $version の必須のファイルを required.$version=<パス> の行で 1 行に 1 つ足す"
   else
     while IFS= read -r path; do
       [ -z "$path" ] && continue
       case "$path" in
-        */) [ -d "$path" ] || fail "必須のディレクトリ $path がありません（ハーネスの版 $version）" \
-              "$path を作る（空なら .gitkeep を置く）。不要になったのなら、版を上げて required_for_version を直す" ;;
-        *) [ -f "$path" ] || fail "必須のファイル $path がありません（ハーネスの版 $version）" \
-              "$path を戻す。不要になったのなら、版を上げて required_for_version を直す" ;;
+        */) [ -d "$path" ] || fail "必須のディレクトリ $path がありません（ハーネスの版 ${version}）" \
+              "$path を作る（空なら .gitkeep を置く）。不要になったのなら、版を上げて scripts/harness/harness.conf の required.<版> の行を直す" ;;
+        *) [ -f "$path" ] || fail "必須のファイル $path がありません（ハーネスの版 ${version}）" \
+              "$path を戻す。不要になったのなら、版を上げて scripts/harness/harness.conf の required.<版> の行を直す" ;;
       esac
     done <<EOF
 $required
@@ -217,13 +367,19 @@ EOF
   fi
 fi
 
-# 2. CLAUDE.md が「@AGENTS.md」の 1 行だけであること（指示が AGENTS.md と CLAUDE.md に分かれないようにする）
-if [ -f CLAUDE.md ] && ! printf '@AGENTS.md\n' | cmp -s - CLAUDE.md; then
-  fail "CLAUDE.md が「@AGENTS.md」の 1 行（末尾の改行を含む）と一致しません" \
-    "CLAUDE.md を「@AGENTS.md」の 1 行にし、足したい指示は AGENTS.md に書く。CLAUDE.md があると Claude Code は AGENTS.md を自分からは読まないため"
+# 2. CLAUDE.md（CLAUDE.md があると Claude Code は AGENTS.md を自分からは読まないため）
+if [ -f CLAUDE.md ]; then
+  if [ "$CLAUDE_MD_EXACT" = yes ]; then
+    printf '@AGENTS.md\n' | cmp -s - CLAUDE.md || fail "CLAUDE.md が「@AGENTS.md」の 1 行（末尾の改行を含む）と一致しません" \
+      "CLAUDE.md を「@AGENTS.md」の 1 行にし、足したい指示は AGENTS.md に書く。CLAUDE.md があると Claude Code は AGENTS.md を自分からは読まないため"
+  elif ! grep -qxF '@AGENTS.md' CLAUDE.md; then
+    fail "CLAUDE.md に「@AGENTS.md」だけの行がありません" \
+      "CLAUDE.md に「@AGENTS.md」だけの行を置く。新しく作るときは、この 1 行だけにし、足したい指示は AGENTS.md に書く。CLAUDE.md があると Claude Code は AGENTS.md を自分からは読まないため"
+  fi
 fi
 
 # 3. 文書の地図のパス
+map=""
 if [ -f AGENTS.md ]; then
   map="$(awk '/^## 文書の地図/{on=1; next} /^## /{on=0} on' AGENTS.md)"
   if [ -z "$map" ]; then
@@ -239,11 +395,9 @@ EOF
 fi
 
 # 4. Markdown の相対リンク（対応する構文は冒頭の説明のとおり）。一覧は git から NUL 区切りで得る
-#    （日本語の名前を引用符付きの形にしないため）。node_modules などの除外は .gitignore に従う。
-work_dir="$(mktemp -d)"
-trap 'rm -rf "$work_dir"' EXIT
+#    （日本語の名前を引用符付きの形にしないため）。依存の置き場などの除外は .gitignore に従う。
 md_list="$work_dir/md-list"
-git -c core.fsmonitor=false -c core.quotePath=false ls-files -z --cached --others --exclude-standard -- '*.md' > "$md_list"
+g ls-files -z --cached --others --exclude-standard -- '*.md' > "$md_list"
 while IFS= read -r -d '' md; do
   if [ -L "$md" ]; then
     fail "$md はシンボリックリンクです" "シンボリックリンクをやめ、実体のファイルを置く"
@@ -251,7 +405,7 @@ while IFS= read -r -d '' md; do
   fi
   if [ ! -f "$md" ]; then
     # 作業ツリーで削除したファイルは調べない。それ以外で読めないものは失敗にする
-    [ -n "$(git -c core.fsmonitor=false --literal-pathspecs ls-files --deleted -- "$md")" ] && continue
+    [ -n "$(g --literal-pathspecs ls-files --deleted -- "$md")" ] && continue
     fail "$md を検査できません（一覧にあるのにファイルとして読めません）" "$md の種類と読み取りの権限を確かめる"
     continue
   fi
@@ -260,7 +414,7 @@ while IFS= read -r -d '' md; do
   rc=$?
   set -e
   if [ "$rc" -gt 1 ]; then
-    fail "$md を grep で読めません（終了コード $rc）" "$md の読み取りの権限と中身を確かめる"
+    fail "$md を grep で読めません（終了コード ${rc}）" "$md の読み取りの権限と中身を確かめる"
     continue
   fi
   dir="$(dirname -- "$md")"
@@ -292,19 +446,18 @@ if [ -f AGENTS.md ]; then
   lines="$(wc -l < AGENTS.md | tr -d ' ')"
   if [ "$lines" -gt "$AGENTS_MAX_LINES" ]; then
     fail "AGENTS.md が $lines 行で、上限 $AGENTS_MAX_LINES 行を超えています" \
-      "詳細を docs/ の文書へ移し、AGENTS.md には決まりの要約と文書の地図の行だけを残す"
+      "詳細を docs/ の文書へ移し、AGENTS.md には決まりの要約と文書の地図の行だけを残す（上限は scripts/harness/harness.conf の agents_max_lines）"
   fi
 fi
 
-# 7. ARCHITECTURE.md に書いたパス
-# 下の正規表現は、scripts/harness/drift-scan.sh の CHECK7_RE に写しがある（変えるときは同じ変更で両方を直す。
-# 一致は scripts/harness/drift-scan.test.sh の試験「写し 1」が確かめる）
+# 7. ARCHITECTURE.md に書いたパス（拾う形は arch_path_re。定期の走査も同じものを使う）
 if [ -f ARCHITECTURE.md ]; then
+  ARCH_RE="$(arch_path_re)"
   while IFS= read -r p; do
     [ -z "$p" ] && continue
     [ -e "$p" ] || fail "ARCHITECTURE.md に書いたパス $p がありません" "ARCHITECTURE.md を実物に合わせるか、$p を作る"
   done <<EOF
-$(grep -oE '`[^`]+`' ARCHITECTURE.md | tr -d '`' | grep -E '^(src|docs|scripts|\.github|templates)/|^[A-Za-z0-9._-]+\.(md|cjs|mjs|ts|json|yml)$' || true)
+$(grep -oE '`[^`]+`' ARCHITECTURE.md | tr -d '`' | grep -E "$ARCH_RE" || true)
 EOF
 fi
 
@@ -373,8 +526,8 @@ if [ -f docs/PLANS.md ]; then
       fi
       while IFS= read -r heading; do
         [ -z "$heading" ] && continue
-        fail "計画 $plan に、必須の節の見出し「$heading」の行がありません" \
-          "$plan に「$heading」の行を足す（前後に文字を足さない）。書くことがまだ無い節も、見出しは置く（docs/PLANS.md の「必須の節」）"
+        fail "計画 $plan に、必須の節の見出し「${heading}」の行がありません" \
+          "$plan に「${heading}」の行を足す（前後に文字を足さない）。書くことがまだ無い節も、見出しは置く（docs/PLANS.md の「必須の節」）"
       done <<EOF
 $(missing_headings_in "$plan" "$plan_headings")
 EOF
@@ -508,6 +661,35 @@ check_record_format() {
   ' "$1"
 }
 
+status_table_verdict() {
+  # 計画 $1 の「## 進捗」の「### 状態の表」（列「項目」「状態」「根拠」）で、基準 $2 の行（項目が $2 か「$2 (」で始まる行）を
+  # 調べる。出力: exempt（状態が不合格の行があり、そのすべての根拠に空でない「持ち越し:」がある）/ no-carry（不合格の行の
+  # どれかに持ち越しが無いか空）/ none（不合格の行が無い）
+  outside_code_blocks "$1" | awk -v id="$2" '
+    function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
+    /^## / { inprog = ($0 == "## 進捗"); intab = 0; next }
+    !inprog { next }
+    /^### / { intab = ($0 == "### 状態の表"); hdr = 0; ci = 0; cs = 0; cr = 0; next }
+    !intab { next }
+    /^\|/ {
+      n = split($0, c, "|")
+      if (!hdr) {
+        for (i = 2; i < n; i++) { h = trim(c[i]); if (h == "項目") ci = i; else if (h == "状態") cs = i; else if (h == "根拠") cr = i }
+        hdr = 1; next
+      }
+      if ($0 ~ /^\|[-:| ]+\|?[ \t]*$/) next
+      if (!ci || !cs) next
+      item = trim(c[ci])
+      if (item != id && index(item, id " (") != 1) next
+      if (trim(c[cs]) != "不合格") next
+      fails++
+      r = cr ? c[cr] : ""
+      if (r ~ /持ち越し:[ \t]*[^ \t]/) ok++
+      next
+    }
+    END { if (fails == 0) print "none"; else if (ok == fails) print "exempt"; else print "no-carry" }'
+}
+
 # 記録から、基準ごとに、判定に数える実行（確かめた者: app-evaluator）のうち最も後の実行の結果を「識別子<TAB>結果」で出す
 latest_results_of() {
   outside_code_blocks "$1" | awk '
@@ -610,11 +792,21 @@ EOF
       [ -z "$id" ] && continue
       [ "$id" = "-" ] && continue
       result="$(awk -F '\t' -v k="$id" '$1 == k { print $2 }' <<<"$latest")"
+      if [ "$result" != "合格" ]; then
+        # 状態の表で不合格（持ち越しつき）として閉じた基準は、失敗にしない（docs/PLANS.md の状態の表の仕様）
+        case "$(status_table_verdict "$plan" "$id")" in
+          exempt) continue ;;
+          no-carry)
+            fail "計画 $plan の基準 $id は、状態の表で不合格ですが、根拠に持ち越し先がありません" \
+              "不合格で閉じるには、状態の表のその行の根拠に「持ち越し: <持ち越し先>」を書く（docs/PLANS.md の状態の表の仕様）。持ち越さないなら、不具合を直して受け入れ確認の担当に基準 $id を確かめ直してもらう"
+            continue ;;
+        esac
+      fi
       if [ -z "$result" ]; then
-        fail "計画 $plan の基準 $id に、判定に数える受け入れ確認の実行がありません（記録 $rec）" \
+        fail "計画 $plan の基準 $id に、判定に数える受け入れ確認の実行がありません（記録 ${rec}）" \
           "受け入れ確認の担当（app-evaluator）に基準 $id を確かめてもらう。ほかの名前の実行は判定に数えない"
       elif [ "$result" != "合格" ]; then
-        fail "計画 $plan の基準 $id の、最新の受け入れ確認の結果が「$result」です（記録 $rec）" \
+        fail "計画 $plan の基準 $id の、最新の受け入れ確認の結果が「${result}」です（記録 ${rec}）" \
           "不具合を直すか確かめられなかった理由を解いてから、受け入れ確認の担当に基準 $id を確かめ直してもらう"
       fi
     done <<EOF
@@ -733,7 +925,7 @@ if [ -e "$SPEC_DIR" ] || [ -L "$SPEC_DIR" ]; then
         continue
       fi
       if [ "$ncol" != 4 ]; then
-        fail "$SPEC_INDEX の目録の行（略号 $abbr）の列の数が $ncol です" \
+        fail "$SPEC_INDEX の目録の行（略号 ${abbr}）の列の数が $ncol です" \
           "目録の行を「| 略号 | [名前.md](名前.md) | 題 | 状態 |」の 4 列にする（題に「|」を使わない）"
       fi
       [[ "$abbr" =~ $ABBR_RE ]] || fail "$SPEC_INDEX の目録の略号 $abbr が、英大文字 2〜6 字ではありません" \
@@ -757,7 +949,7 @@ if [ -e "$SPEC_DIR" ] || [ -L "$SPEC_DIR" ]; then
       fi
       case "$status" in
         draft|approved|archived) ;;
-        *) fail "$SPEC_INDEX の目録の略号 $abbr の状態「$status」は、draft・approved・archived のどれでもありません" \
+        *) fail "$SPEC_INDEX の目録の略号 $abbr の状態「${status}」は、draft・approved・archived のどれでもありません" \
              "状態の欄を draft・approved・archived のどれか 1 語にする" ;;
       esac
       printf '%s\t%s\t%s\n' "$abbr" "$path" "$status" >> "$catalog"
@@ -768,7 +960,7 @@ EOF
       fail "$SPEC_INDEX の「## 目録」の節に、目録の表がありません" \
         "「## 目録」の節に、見出しの行が「| 略号 | 仕様 | 題 | 状態 |」の表を置く（行が 0 行でもよい）"
     elif [ "$catalog_header" != "$CATALOG_HEADER" ]; then
-      fail "$SPEC_INDEX の目録の表の見出しの行が「$catalog_header」です（期待: $CATALOG_HEADER）" \
+      fail "$SPEC_INDEX の目録の表の見出しの行が「${catalog_header}」です（期待: ${CATALOG_HEADER}）" \
         "目録の表の見出しの行を「| 略号 | 仕様 | 題 | 状態 |」に戻す。列を変えるときは scripts/harness/check-docs.sh も直す"
     fi
     while IFS= read -r dup; do
@@ -829,15 +1021,15 @@ EOF
         if [ -n "${spec_headings:-}" ]; then
           while IFS= read -r heading; do
             [ -z "$heading" ] && continue
-            fail "仕様 $spec に、必須の節の見出し「$heading」の行がありません" \
-              "$spec に「$heading」の行を足す（前後に文字を足さない）。書くことがまだ無い節も、見出しは置く（$SPEC_INDEX の「必須の節」）"
+            fail "仕様 $spec に、必須の節の見出し「${heading}」の行がありません" \
+              "$spec に「${heading}」の行を足す（前後に文字を足さない）。書くことがまだ無い節も、見出しは置く（$SPEC_INDEX の「必須の節」）"
           done <<EOF
 $(missing_headings_in "$spec" "$spec_headings")
 EOF
         fi
         while IFS= read -r problem; do
           [ -z "$problem" ] && continue
-          fail "仕様 $spec の受け入れ基準: $problem" "$SPEC_FIX（基準ごとに「### <略号>-<数字> <題>」と、前提・操作・期待する結果の行を 1 行ずつ）"
+          fail "仕様 $spec の受け入れ基準: $problem" "${SPEC_FIX}（基準ごとに「### <略号>-<数字> <題>」と、前提・操作・期待する結果の行を 1 行ずつ）"
         done <<EOF
 $(printf '%s\n' "$criteria" | sed -n 's/^ERR	//p')
 EOF
@@ -933,10 +1125,11 @@ $(check_plan_verification "$plan" | sed -n 's/^ID	//p')
 EOF
 done
 
+
 # 11. 古い計画（決まりの正本は docs/PLANS.md の「置き場所と名前」）
 DATE_SHAPE_RE='^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
 
-# 日付（YYYY-MM-DD）を扱う awk の関数。date コマンドの日付の計算は macOS と Linux で書き方が違うので、awk で計算する。
+# 日付（YYYY-MM-DD）を扱う awk の関数。date コマンドの日付の計算は環境ごとに書き方が違うので、awk で計算する。
 # どの awk でも同じ結果になるように、substr、int、四則と剰余だけで書く。
 #   valid_date(s): 暦にある日付なら 1（月ごとの日数と、うるう年の 2 月を確かめる）
 #   day_number(s): 通しの日数
@@ -994,11 +1187,19 @@ days_between() {
   awk -v a="$1" -v b="$2" "$DATE_AWK"'BEGIN { print day_number(b) - day_number(a) }'
 }
 
+STALE_PLAN_DAYS=""
+if [ -f docs/PLANS.md ]; then
+  STALE_PLAN_DAYS="$(sed -n 's/^古い計画の日数: \([1-9][0-9]*\)$/\1/p' docs/PLANS.md | head -n 1)"
+  if [ -z "$STALE_PLAN_DAYS" ]; then
+    fail "docs/PLANS.md に「古い計画の日数: <整数>」の行がありません" \
+      "docs/PLANS.md の「置き場所と名前」に、進行中の計画を古いとみなす日数を「古い計画の日数: 30」の形の 1 行で戻す（文書の検査の検査 11 がこの行を読む）"
+  fi
+fi
 base_day="${HARNESS_TODAY:-$(date '+%Y-%m-%d')}"
 if ! is_real_date "$base_day"; then
-  fail "環境変数 HARNESS_TODAY の値「$base_day」が、YYYY-MM-DD の形の、暦にある日付ではありません" \
+  fail "環境変数 HARNESS_TODAY の値「${base_day}」が、YYYY-MM-DD の形の、暦にある日付ではありません" \
     "HARNESS_TODAY を YYYY-MM-DD の形の、暦にある日付にするか、外す（外すと、実行した日を基準の日にする）"
-else
+elif [ -n "$STALE_PLAN_DAYS" ]; then
   for plan in docs/exec-plans/active/*.md; do
     case "$plan" in *.acceptance.md) continue ;; esac
     # 読めない計画と CR を含む計画は、検査 8 が失敗にしている
@@ -1012,396 +1213,259 @@ else
     fi
     elapsed="$(days_between "$latest" "$base_day")"
     if [ "$elapsed" -ge "$STALE_PLAN_DAYS" ]; then
-      fail "進行中の計画 $plan が古くなっています（最も新しい日付 $latest から $elapsed 日。基準の日は $base_day。$STALE_PLAN_DAYS 日以上、日付の更新が無い進行中の計画は失敗にする）" \
+      fail "進行中の計画 $plan が古くなっています（最も新しい日付 $latest から $elapsed 日。基準の日は ${base_day}。$STALE_PLAN_DAYS 日以上、日付の更新が無い進行中の計画は失敗にする）" \
         "作業を進めたなら、$plan の「## 進捗」の節に、進めた日付（YYYY-MM-DD）の行を足す。終えたなら、「## 結果と振り返り」を書いて docs/exec-plans/completed/ へ移す。やめたなら、やめた理由を「## 結果と振り返り」に書いて docs/exec-plans/completed/ へ移す（docs/PLANS.md の「置き場所と名前」）"
     fi
   done
 fi
 
-# 12. 文書の検査の一覧（一覧の正本は CHECK_NAMES。比べる文書は冒頭の説明のとおり）
-CHECK_LIST_FIX="検査を足す・外すときは、scripts/harness/check-docs.sh の冒頭の「確かめること」と CHECK_NAMES、AGENTS.md の「検査のコマンド」の表の check:docs の行、docs/QUALITY_SCORE.md の「目標」の表の「文書が実物と合っている」の測る項目の 4 か所を同じ変更で直す"
-
-# 標準入力の行を「、」でつないで 1 行にする（paste -d は 1 バイトずつの区切りしか扱えないので awk で書く）
-join_names() {
-  awk 'NR > 1 { printf "、" } { printf "%s", $0 } END { if (NR > 0) printf "\n" }'
+# 12. 検査の由来の記録（読み方と、調べないときは冒頭の説明のとおり）
+# 地図の表の行のうち、1 列目（前後の空白を除く）が $1 の awk の正規表現に合う行の、2 列目のバッククォートの中身を 1 行に 1 つ出す
+map_paths_of() {
+  printf '%s\n' "$map" | awk -F '|' -v re="$1" '
+    /^\|/ {
+      k = $2; gsub(/^[ \t]+|[ \t]+$/, "", k)
+      if (k !~ re) next
+      v = $3
+      while (match(v, /`[^`]+`/)) { print substr(v, RSTART + 1, RLENGTH - 2); v = substr(v, RSTART + RLENGTH) }
+    }'
 }
-
-expected_names="$(printf '%s\n' "${CHECK_NAMES[@]}")"
-expected_list="$(printf '%s\n' "$expected_names" | join_names)"
-
-# 冒頭の「確かめること」の検査の番号（「#   1. 」「#  12. 」の形の行）が 1 から欠けずに並び、数が CHECK_NAMES と同じか
-header_numbers="$(awk 'NR == 1 { next } !/^#/ { exit } /^# +[0-9]+\. / { sub(/^# +/, ""); sub(/\..*$/, ""); print }' "$SELF")"
-header_count=0
-header_in_order=1
-while IFS= read -r n; do
-  [ -z "$n" ] && continue
-  header_count=$((header_count + 1))
-  [ "$n" = "$header_count" ] || header_in_order=0
-done <<EOF
-$header_numbers
-EOF
-if [ "$header_in_order" -eq 0 ]; then
-  fail "scripts/harness/check-docs.sh の冒頭の「確かめること」の検査の番号が、1 から欠けずに並んでいません（$(printf '%s\n' "$header_numbers" | tr '\n' ' ' | sed 's/ $//')）" \
-    "冒頭の一覧の番号を 1 から 1 ずつ増やす。$CHECK_LIST_FIX"
-elif [ "$header_count" -ne "${#CHECK_NAMES[@]}" ]; then
-  fail "scripts/harness/check-docs.sh の冒頭の「確かめること」の検査が $header_count 件なのに、CHECK_NAMES の名前が ${#CHECK_NAMES[@]} 件です" \
-    "CHECK_NAMES に、冒頭の一覧の検査ごとに短い名前を 1 つずつ、番号の順に書く。$CHECK_LIST_FIX"
-fi
-
-# $1 = 文書の場所の説明、$2 = 文書から読んだ括弧書き。CHECK_NAMES とバッククォートを除いて比べる
-compare_check_list() {
-  local where="$1" got="${2//\`/}" got_names missing extra detail
-  [ "$got" = "$expected_list" ] && return 0
-  got_names="$(printf '%s\n' "$got" | awk '{ n = split($0, a, "、"); for (i = 1; i <= n; i++) print a[i] }')"
-  missing="$(grep -vxF -- "$got_names" <<<"$expected_names" | join_names || true)"
-  extra="$(grep -vxF -- "$expected_names" <<<"$got_names" | join_names || true)"
-  detail=""
-  [ -n "$missing" ] && detail="足りない名前: $missing"
-  [ -n "$extra" ] && detail="${detail:+$detail。}余分な名前: $extra"
-  [ -z "$detail" ] && detail="名前の順か区切りが違います"
-  fail "${where}の括弧書き「$got」が、文書の検査の一覧と合いません（$detail）" \
-    "括弧書きを「$expected_list」にする（scripts/harness/check-docs.sh の CHECK_NAMES の名前を、同じ順に「、」でつなぐ。ファイル名にはバッククォートを付けてよい）。$CHECK_LIST_FIX"
-}
-
-# $1 = ファイル、$2 = 節の見出し。節の中の表の行を出す
-table_rows_in_section() {
-  awk -v sec="$2" '/^## /{ on = ($0 == sec); next } on && /^[[:space:]]*\|/' "$1"
-}
-
-# $1 = 表の行、$2 = 列の番号。前後の空白を除いた値を出す
-table_cell() {
-  awk -F '|' -v k="$(($2 + 1))" '{ c = $k; gsub(/^[[:space:]]+|[[:space:]]+$/, "", c); print c }' <<<"$1"
-}
-
-if [ -f AGENTS.md ] && ! grep -qxF '## 検査のコマンド' AGENTS.md; then
-  fail "AGENTS.md に「## 検査のコマンド」の見出しの行がありません" \
-    "AGENTS.md に、何を確かめるか・コマンドの表を持つ「## 検査のコマンド」の節を置く（見出しを変えると、検査 12 が check:docs の行を探せないため）。$CHECK_LIST_FIX"
-elif [ -f AGENTS.md ]; then
-  where='AGENTS.md の「## 検査のコマンド」の表の、コマンドが `npm run check:docs` の行'
-  rows="$(table_rows_in_section AGENTS.md '## 検査のコマンド' | awk -F '|' '{ c = $(NF - 1); gsub(/^[[:space:]]+|[[:space:]]+$/, "", c) } c == "`npm run check:docs`"')"
-  nrows="$(printf '%s' "$rows" | awk 'END { print NR }')"
-  if [ "$nrows" -ne 1 ]; then
-    fail "${where}が ${nrows} 行あります（1 行のはず）" \
-      "AGENTS.md の「## 検査のコマンド」の表に、「| 文書（…） | \`npm run check:docs\` |」の行をちょうど 1 行置く。$CHECK_LIST_FIX"
-  else
-    cell="$(table_cell "$rows" 1)"
-    case "$cell" in
-      文書（*）)
-        items="${cell#文書（}"
-        compare_check_list "$where" "${items%）}"
-        ;;
-      *)
-        fail "${where}の 1 列目「$cell」が「文書（…）」の形ではありません" \
-          "1 列目を「文書（$expected_list）」にする。$CHECK_LIST_FIX"
-        ;;
-    esac
-  fi
-fi
-
-if [ -f docs/QUALITY_SCORE.md ] && ! grep -qxF '## 目標' docs/QUALITY_SCORE.md; then
-  fail "docs/QUALITY_SCORE.md に「## 目標」の見出しの行がありません" \
-    "docs/QUALITY_SCORE.md に、目標・測る項目・確かめ方・検査の識別子の表を持つ「## 目標」の節を置く（見出しを変えると、検査 12 が測る項目を探せないため）。$CHECK_LIST_FIX"
-elif [ -f docs/QUALITY_SCORE.md ]; then
-  where='docs/QUALITY_SCORE.md の「## 目標」の表の、目標が「文書が実物と合っている」の行の測る項目'
-  rows="$(table_rows_in_section docs/QUALITY_SCORE.md '## 目標' | awk -F '|' '{ c = $2; gsub(/^[[:space:]]+|[[:space:]]+$/, "", c) } c == "文書が実物と合っている"')"
-  nrows="$(printf '%s' "$rows" | awk 'END { print NR }')"
-  if [ "$nrows" -ne 1 ]; then
-    fail "docs/QUALITY_SCORE.md の「## 目標」の表に、目標が「文書が実物と合っている」の行が ${nrows} 行あります（1 行のはず）" \
-      "「## 目標」の表に、その目標の行をちょうど 1 行置く。$CHECK_LIST_FIX"
-  else
-    cell="$(table_cell "$rows" 2)"
-    rest="${cell#*文書の検査の不整合（}"
-    if [ "$rest" = "$cell" ] || [ "${rest%%）*}" = "$rest" ]; then
-      fail "${where}に「文書の検査の不整合（…）」の形の括弧書きがありません" \
-        "測る項目を「文書の検査の不整合（$expected_list）と、…」の形にする。$CHECK_LIST_FIX"
-    else
-      compare_check_list "$where" "${rest%%）*}"
-    fi
-  fi
-fi
-
-# 13. 通信の名前の一覧（読み取りの前提は冒頭の説明のとおり）
-NET_FIX="通信の名前を足す・外すときは、ARCHITECTURE.md の不変条件（1 は通信のための大域の名前、2 は通信のためのモジュール）と、eslint.config.mjs の NETWORK_GLOBALS、NETWORK_MODULE_BASES（node: 付きと無しの両方に展開される）、NETWORK_MODULES の末尾の名前を、同じ変更で直す"
-NET_PREMISE_FIX="書き方を元に戻す。書き方を変えるなら、scripts/harness/check-docs.sh の検査 13 の読み取りを同じ変更で直す（検査 13 は決まった書き方を前提に読むので、前提が崩れると一致を確かめられないため）"
-
-# 標準入力のタブを空白にし、連続する空白を 1 つにそろえる
-squeeze_spaces() {
-  tr '\t' ' ' | tr -s ' '
-}
-
-# ARCHITECTURE.md の「## 不変条件」の番号 $1 の項目を、続きの行（字下げした行）の先頭の空白を除いて空白 1 つを挟んでつなぎ、
-# 連続する空白を 1 つにそろえて 1 行で出す
-invariant_text() {
-  outside_code_blocks ARCHITECTURE.md | awk -v n="$1" '
-    /^## / { on = ($0 == "## 不変条件"); cur = ""; next }
-    !on { next }
-    /^[0-9]+\. / { cur = substr($0, 1, index($0, ".") - 1); if (cur == n) printf "%s", $0; next }
-    /^[[:space:]]+[^[:space:]]/ { if (cur == n) { s = $0; sub(/^[[:space:]]+/, "", s); printf " %s", s }; next }
-    { cur = "" }
-    END { printf "\n" }' | squeeze_spaces
-}
-
-# 「、」で区切った、バッククォートで囲んだ名前の並び $1 から、名前を 1 行ずつ出す。形の違う項目は「BAD<TAB>項目」で出す
-backquoted_names() {
-  awk '{ n = split($0, a, "、"); for (i = 1; i <= n; i++) { s = a[i]; gsub(/^[[:space:]]+|[[:space:]]+$/, "", s)
-    if (s ~ /^`[^`]+`$/) print substr(s, 2, length(s) - 2); else print "BAD\t" s } }' <<<"$1"
-}
-
-# JavaScript の配列の中身（"a", "b"）$1 から、名前を 1 行ずつ出す。空の項目は飛ばし、形の違う項目は「BAD<TAB>項目」で出す
-quoted_names() {
-  awk '{ n = split($0, a, ","); for (i = 1; i <= n; i++) { s = a[i]; gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); if (s == "") continue
-    if (s ~ /^"[^"]+"$/) print substr(s, 2, length(s) - 2); else print "BAD\t" s } }' <<<"$1"
-}
-
-# 読み取った名前の並び $2 が空か、形の違う項目を含めば、$1（どこを読んだか）の前提の崩れとして失敗にし、0 を返す
-# （読み取れたら 1 を返す）。fail が errors を数えるので、コマンド置換の中では呼ばない
-names_unreadable() {
-  if [ -z "$2" ]; then
-    fail "${1}から、名前を 1 つも読み取れません" "$NET_PREMISE_FIX"
-    return 0
-  fi
-  if grep -q '^BAD	' <<<"$2"; then
-    fail "${1}に、名前の形でない項目があります（$(sed -n 's/^BAD	//p' <<<"$2" | join_names)）" "$NET_PREMISE_FIX"
-    return 0
-  fi
-  return 1
-}
-
-# $1 = 何の名前か、$2 = ARCHITECTURE.md の名前（1 行 1 つ）、$3 = eslint.config.mjs の名前、$4 = 不変条件の番号、$5 = 定数の名前
-compare_name_sets() {
-  local only_arch only_eslint
-  only_arch="$(grep -vxF -- "$3" <<<"$2" | sort -u | join_names || true)"
-  only_eslint="$(grep -vxF -- "$2" <<<"$3" | sort -u | join_names || true)"
-  [ -z "$only_arch$only_eslint" ] && return 0
-  fail "ARCHITECTURE.md の不変条件 $4 と eslint.config.mjs の $5 で、$1が合いません（ARCHITECTURE.md だけにある: ${only_arch:-なし}。eslint.config.mjs だけにある: ${only_eslint:-なし}）" \
-    "2 つを同じ名前の集まりにする。$NET_FIX"
-}
-
-# eslint.config.mjs の中で、名前 $1 に値を入れる書き方（「$1 =」。行頭の const の有無、コメントの中かを問わない）が、ちょうど
-# 1 か所で、それが行頭から始まる「const $1 = 」の行であることを確かめる。そうでなければ失敗にし、1 を返す。
-# JavaScript のコメントを解析せずに、コメントの中に古い 1 行の宣言を残して本物の宣言を複数行にする形を塞ぐため
-# （1 行の宣言だけを探すと、コメントの中の古い宣言を拾い、食い違いを見逃す）
-single_declaration() {
-  local n
-  n="$({ grep -oE "(^|[^A-Za-z0-9_\$])$1[[:space:]]*=([^=>]|\$)" eslint.config.mjs || true; } | awk 'END { print NR }')"
-  if [ "$n" -ne 1 ] || ! grep -qE "^const $1 = " eslint.config.mjs; then
-    fail "eslint.config.mjs に、$1 に値を入れる書き方（「$1 =」。コメントの中を含む）が $n か所あるか、行頭から始まる「const $1 = 」の行ではありません（1 か所で、その形のはず）" \
-      "$1 の宣言を、行頭から始まる「const $1 = …;」の 1 行だけにする（コメントの中に古い宣言を残さない）。$NET_PREMISE_FIX"
-    return 1
-  fi
-}
-
-# eslint.config.mjs の定数 $1 の行（「const $1 = [ … ];」の 1 行）の、角括弧の中身を CONST_INNER に入れる。
-# ちょうど 1 行でなければ失敗にし、1 を返す（fail が errors を数えるので、コマンド置換の中では呼ばない）
-const_inner() {
-  local lines n
-  CONST_INNER=""
-  single_declaration "$1" || return 1
-  lines="$(grep -E "^const $1 = \\[.*\\];\$" eslint.config.mjs || true)"
-  n="$(printf '%s' "$lines" | awk 'END { print NR }')"
-  if [ "$n" -ne 1 ]; then
-    fail "eslint.config.mjs に「const $1 = [ … ];」の 1 行が $n 行あります（1 行のはず）" "$NET_PREMISE_FIX"
-    return 1
-  fi
-  CONST_INNER="${lines#*\[}"
-  CONST_INNER="${CONST_INNER%\]*}"
-}
-
-if [ ! -f eslint.config.mjs ]; then
-  fail "eslint.config.mjs がありません（検査 13 が、通信の名前の一覧を ARCHITECTURE.md と照合できません）" \
-    "eslint.config.mjs を戻す。ESLint の設定の置き場を変えたなら、scripts/harness/check-docs.sh の検査 13 の読み取りを同じ変更で直す"
-else
-  NET_SEP="$(printf '%s\n' 'と、それぞれに `node:` を付けた名前、' | squeeze_spaces)"
-  NET_MODULES_RE='^const NETWORK_MODULES = \[\.\.\.NETWORK_MODULE_BASES\.flatMap\(\(m\) => \[`node:\$\{m\}`, m\]\)(, "[^"]+")*\];$'
-
-  # eslint.config.mjs の側（文字列として読む。実行しない）
-  eslint_modules=""
-  eslint_globals=""
-  if const_inner NETWORK_MODULE_BASES; then
-    bases="$(quoted_names "$CONST_INNER")"
-    if ! names_unreadable "eslint.config.mjs の NETWORK_MODULE_BASES " "$bases" && single_declaration NETWORK_MODULES; then
-      modules_line="$(grep -E '^const NETWORK_MODULES = ' eslint.config.mjs || true)"
-      if ! grep -qE "$NET_MODULES_RE" <<<"$modules_line" || [ "$(printf '%s\n' "$modules_line" | awk 'END { print NR }')" -ne 1 ]; then
-        fail "eslint.config.mjs の NETWORK_MODULES の行が、「const NETWORK_MODULES = [...NETWORK_MODULE_BASES.flatMap((m) => [\`node:\${m}\`, m]), \"名前\", …];」の 1 行の形ではありません" \
-          "$NET_PREMISE_FIX"
+# 差分（標準入力）が、版だけを置き換えた行の対だけでできているか（設定の record_exempt_line_re を引数で受け取る）
+EXEMPT_PL='
+  my @res = map { qr/$_/ } @ARGV;
+  # 行が規則に合えば（名前、版、行から版の部分を除いた残り）を返す。版の部分は名前つきの捕獲 ver の位置で切り出す
+  sub split_ver {
+    my ($l, $r) = @_;
+    return () unless $l =~ $r;
+    my ($n, $v) = ($+{name}, $+{ver});
+    return () unless defined $n && defined $v;
+    for my $k (1 .. $#-) {
+      next unless defined $-[$k] && substr($l, $-[$k], $+[$k] - $-[$k]) eq $v;
+      return ($n, $v, substr($l, 0, $-[$k]) . "\0" . substr($l, $+[$k]));
+    }
+    return ();
+  }
+  my ($ok, $any, $inhead) = (1, 0, 0);
+  my (@minus, @plus);
+  sub flush {
+    if (@minus || @plus) {
+      $any = 1;
+      if (@minus != @plus) { $ok = 0 }
+      else {
+        for my $i (0 .. $#minus) {
+          my ($m, $p, $pair) = ($minus[$i], $plus[$i], 0);
+          for my $r (@res) {
+            my ($mn, $mv, $mrest) = split_ver($m, $r); next unless defined $mn;
+            my ($pn, $pv, $prest) = split_ver($p, $r); next unless defined $pn;
+            if ($mn eq $pn && $mv ne $pv && $mrest eq $prest) { $pair = 1; last }
+          }
+          $ok = 0 unless $pair;
+        }
+      }
+    }
+    @minus = (); @plus = ();
+  }
+  while (my $l = <STDIN>) {
+    chomp $l;
+    if ($l =~ /^diff --git /) { flush(); $inhead = 1; next }
+    if ($inhead) {
+      if ($l =~ /^@@/) { $inhead = 0; next }
+      $ok = 0 if $l =~ /^(new file mode|deleted file mode|rename from|rename to|copy from|copy to|old mode|new mode|Binary files)/;
+      next;
+    }
+    if ($l =~ /^@@/) { flush(); next }
+    next if $l =~ /^\\/;
+    if ($l =~ /^-(.*)$/s) { push @minus, $1; next }
+    if ($l =~ /^\+(.*)$/s) { push @plus, $1; next }
+  }
+  flush();
+  exit(($ok && $any) ? 0 : 1);
+'
+if [ -n "$map" ]; then
+  log_path="$(map_paths_of '^検査の由来の記録$' | head -n 1)"
+  def_paths="$(map_paths_of '^検査(（|$)')"
+  base_ref=""
+  base_ok=1
+  if [ -n "$log_path" ] && [ -n "$def_paths" ] && g rev-parse --verify -q HEAD > /dev/null; then
+    if [ -n "${GITHUB_BASE_REF:-}" ]; then
+      if g rev-parse --verify -q "refs/remotes/origin/$GITHUB_BASE_REF" > /dev/null; then
+        base_ref="origin/$GITHUB_BASE_REF"
       else
-        extras_part="${modules_line#*m\]\)}"
-        # 末尾の名前は、上の正規表現で「, "名前"」の並びだと確かめてある（無くてもよい）
-        extras="$(quoted_names "${extras_part%\];}")"
-        eslint_modules="$(printf '%s\n' "$bases" | awk '{ print "node:" $0; print }'; if [ -n "$extras" ]; then printf '%s\n' "$extras"; fi)"
+        base_ok=0
       fi
-    fi
-  fi
-  if const_inner NETWORK_GLOBALS; then
-    globals="$(quoted_names "$CONST_INNER")"
-    names_unreadable "eslint.config.mjs の NETWORK_GLOBALS " "$globals" || eslint_globals="$globals"
-  fi
-
-  # ARCHITECTURE.md の側
-  if [ -f ARCHITECTURE.md ]; then
-    item2="$(invariant_text 2)"
-    rest="${item2#*通信のためのモジュール（}"
-    inner="${rest%%）*}"
-    if [ "$rest" = "$item2" ] || [ "$inner" = "$rest" ]; then
-      fail "ARCHITECTURE.md の「## 不変条件」の 2 に「通信のためのモジュール（…）」の括弧書きがありません" "$NET_PREMISE_FIX"
     else
-      case "$inner" in
-        *"$NET_SEP"*)
-          arch_bases="$(backquoted_names "${inner%%"$NET_SEP"*}")"
-          arch_extras="$(backquoted_names "${inner#*"$NET_SEP"}")"
-          if ! names_unreadable "ARCHITECTURE.md の不変条件 2 の括弧書きの「$NET_SEP」より前" "$arch_bases" \
-            && ! names_unreadable "ARCHITECTURE.md の不変条件 2 の括弧書きの「$NET_SEP」より後" "$arch_extras" \
-            && [ -n "$eslint_modules" ]; then
-            compare_name_sets "通信のためのモジュール" \
-              "$(printf '%s\n' "$arch_bases" | awk '{ print "node:" $0; print }'; printf '%s\n' "$arch_extras")" \
-              "$eslint_modules" 2 "NETWORK_MODULES"
-          fi
-          ;;
-        *)
-          fail "ARCHITECTURE.md の不変条件 2 の括弧書き「$inner」に「$NET_SEP」がありません（検査 13 は、この語の前の名前を node: 付きと無しに展開し、後の名前をそのまま足して読む）" \
-            "$NET_PREMISE_FIX"
-          ;;
-      esac
+      for r in ${HARNESS_BASE_REF:+"$HARNESS_BASE_REF"} "origin/$DEFAULT_BRANCH" "$DEFAULT_BRANCH"; do
+        if g rev-parse --verify -q "$r^{commit}" > /dev/null; then base_ref="$r"; break; fi
+      done
     fi
-
-    item1="$(invariant_text 1)"
-    rest="${item1#*通信のための大域の名前（}"
-    inner="${rest%%。*}"
-    if [ "$rest" = "$item1" ] || [ "$inner" = "$rest" ]; then
-      fail "ARCHITECTURE.md の「## 不変条件」の 1 に「通信のための大域の名前（\`fetch\`、…。」の形の並びがありません" "$NET_PREMISE_FIX"
-    else
-      arch_globals="$(backquoted_names "$inner")"
-      if ! names_unreadable "ARCHITECTURE.md の不変条件 1 の通信のための大域の名前の並び" "$arch_globals" && [ -n "$eslint_globals" ]; then
-        compare_name_sets "通信のための大域の名前" "$arch_globals" "$eslint_globals" 1 "NETWORK_GLOBALS"
-      fi
+    mb=""
+    if [ "$base_ok" -eq 1 ] && [ -n "$base_ref" ]; then
+      mb="$(g merge-base HEAD "$base_ref" 2>/dev/null)" || mb=""
+      [ -n "$mb" ] || { [ -n "${GITHUB_BASE_REF:-}" ] && base_ok=0; }
     fi
-  fi
-fi
-
-# 14. 層の評価の上限（読み取りの前提は冒頭の説明のとおり）
-LAYER_RULE_DOC="docs/QUALITY_SCORE.md の「現在の評価」の表 2 の直前の決まり「人が確かめる決まりの数が 1 以上の層は、A にしない」"
-LAYER_PREMISE_FIX="「## 現在の評価」の節の書き方を元に戻す（節は 1 つだけにする。表 2 の見出しの行は「| 層 | 評価 | 検査の識別子 | 人が確かめる決まりの数 | 根拠 | 評価した日 | 評価したコミット |」、表 1 の見出しの行は「| 領域 | 評価 | 検査の識別子 | 根拠 | 評価した日 | 評価したコミット |」にし、節の中にほかの表を置かない。表の途中に空行を入れない。表 2 の最後の行の直後には空行を置く。節の中に囲みのコードブロック（\`\`\` か ~~~）を置かない。「人が確かめる決まりの数」の列を持つ表を節の外に置かない。決まりの数は 0 以上の整数、評価は A〜D の 1 字）。書き方を変えるなら、scripts/harness/check-docs.sh の検査 14 の読み取りを同じ変更で直す（検査 14 は決まった書き方を前提に読むので、前提が崩れると決まりを確かめられないため）"
-# 表 1 の見出しの行。scripts/harness/drift-scan.sh の T1_HEADER の写し（「## 現在の評価」の節で、表 2 のほかに読み飛ばしてよい表）。
-# 変えるときは同じ変更で両方を直す（一致は scripts/harness/check-docs.test.sh の試験「写し T1」が確かめる）
-LAYER_T1_HEADER='| 領域 | 評価 | 検査の識別子 | 根拠 | 評価した日 | 評価したコミット |'
-
-# docs/QUALITY_SCORE.md の表 2 を読み、1 行ずつ次のどれかの形で出す:
-#   ERR<TAB><読み取りの前提の崩れの説明>
-#   VIOL<TAB><層><TAB><決まりの数>       決まりの数が 1 以上なのに評価が A の行
-# 共通の outside_code_blocks（``` だけを認識する）は使わず、ファイルをそのまま読む。代わりに、節の中に囲みのコードブロックの
-# 行（行頭の空白 0〜3 個の後に ``` か ~~~）が 1 つでもあれば、前提の崩れにする（~~~ の中の ``` の行で、コードブロックの内と外の
-# 判定が反転し、本物の表 2 を読み飛ばす形を塞ぐため）
-check_layer_ratings() {
-  awk -v t1="$LAYER_T1_HEADER" '
-    function trim(s) { gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); return s }
-    function cells(line, out,   n, i) {
-      sub(/^[[:space:]]*\|/, "", line); sub(/\|[[:space:]]*$/, "", line)
-      n = split(line, out, "|")
-      for (i = 1; i <= n; i++) out[i] = trim(out[i])
-      return n
-    }
-    # 節の外の囲みのコードブロック（``` か ~~~ で開き、同じ記号で閉じる）の中の行は読まない（見本の表や見出しを数えないため）
-    infence {
-      if ((fch == "```" && /^ ? ? ?```/) || (fch == "~~~" && /^ ? ? ?~~~/)) infence = 0
-      next
-    }
-    # 表 2 の行（見出しと区切りの行を含む）の直後の行が、縦線で始まらず空行でもないときは、前提の崩れにする。GFM では行頭と
-    # 行末の縦線を省いた行も、空行か別のブロックの始まりまでは表の行として表示されるので、末尾の行の縦線を外した A の行を
-    # 黙って読み飛ばさないため。見出しなど表を終える行が直後に来る場合も、GFM の解釈をせずに失敗にする（表の後に空行を
-    # 置けば済むため）。空行は、半角空白・タブ・CR だけの行とする（[[:space:]] だと、改ページ（\f）や環境によって NBSP だけの
-    # 行も空行とみなし、その次の縦線の無い行を調べずに通すため）。next を書かず、この行を下の規則でも読む
-    intable && target && !/^[[:space:]]*\|/ {
-      if ($0 !~ /^[ \t\r]*$/) print "ERR\t表 2 の直後に空行がありません（縦線で始まらない行も、表 2 の行として表示されることがあります）: " $0
-    }
-    # 見出しの 2 段目（行頭の空白 0〜3 個、##、空白か行末）。名前は ## の後と行末の空白、閉じの # の並びを除いて比べる。
-    # 正規表現の括弧の中に $ を書かない（awk の実装によって働かないため）
-    /^ ? ? ?##$/ || /^ ? ? ?##[ \t]/ {
-      name = $0; sub(/^ *##/, "", name); sub(/[ \t]+#+[ \t]*$/, "", name); name = trim(name)
-      insec = (name == "現在の評価"); if (insec) nsec++
-      intable = 0; next
-    }
-    /^ ? ? ?```/ || /^ ? ? ?~~~/ {
-      intable = 0
-      if (insec) {
-        if (!fenced) print "ERR\t「## 現在の評価」の節に、囲みのコードブロックの行（``` か ~~~）があります: " $0
-        fenced = 1
-      } else {
-        infence = 1; fch = (/^ ? ? ?```/) ? "```" : "~~~"
-      }
-      next
-    }
-    /^[[:space:]]*\|/ {
-      if (!intable) {
-        intable = 1; target = 0; rowno = 0
-        hn = cells($0, h); rc = 0; cc = 0
-        for (i = 1; i <= hn; i++) {
-          if (h[i] == "評価") { rc++; ri = i }
-          if (h[i] == "人が確かめる決まりの数") { cc++; ci = i }
-        }
-        # 節の外の表は読まない。ただし表 2 と同じ「人が確かめる決まりの数」の列を持つ表は、名前の違う節（全角空白を付けた
-        # 見出し、別の名前の節）に置いた表 2 を見逃さないため、前提の崩れにする
-        if (!insec) {
-          if (cc > 0) print "ERR\t「## 現在の評価」の節の外に、見出しの行に「人が確かめる決まりの数」の列を持つ表があります: " $0
-          next
-        }
-        if (cc == 0) {
-          # 表 1 の見出し（drift-scan.sh が表 1 と認める見出しと同じ条件）の表だけを読み飛ばす。それ以外は、表 2 の途中の
-          # 空行で分かれた続きの行などの恐れがあるので、前提の崩れにする（黙って読み飛ばすと、A の行がすり抜けるため）
-          line = $0; sub(/[ \t]+$/, "", line)
-          if (line != t1) print "ERR\t「## 現在の評価」の節に、表 1 の見出しでも表 2 の見出しでもない表の行があります（表 2 の途中に空行があると、続きの行がこの形になります）: " $0
-          next
-        }
-        ntables++
-        if (cc > 1) { print "ERR\t表 2 の見出しの行に「人が確かめる決まりの数」の列が " cc " 列あります（1 列のはず）"; next }
-        if (rc != 1) { print "ERR\t表 2 の見出しの行に「評価」の列が " rc " 列あります（1 列のはず）"; next }
-        target = 1
-        next
-      }
-      if (!target) next
-      rowno++
-      n = cells($0, c)
-      if (rowno == 1) {
-        bad = (n != hn)
-        for (i = 1; i <= n && !bad; i++) if (c[i] !~ /^:?-+:?$/) bad = 1
-        if (bad) { print "ERR\t表 2 の見出しの直後の行が、見出しと同じ " hn " 列の区切りの行（|---|…）ではありません: " $0; target = 0 }
-        next
-      }
-      if (n != hn) { print "ERR\t表 2 の行の列の数が " n " です（見出しの行は " hn " 列）: " $0; next }
-      nrows++
-      layer = c[1]; count = c[ci]; rating = c[ri]
-      if (count !~ /^[0-9]+$/) { print "ERR\t表 2 の層 " layer " の人が確かめる決まりの数「" count "」が 0 以上の整数ではありません"; next }
-      if (rating !~ /^[ABCD]$/) { print "ERR\t表 2 の層 " layer " の評価「" rating "」が A〜D の 1 字ではありません"; next }
-      if (count + 0 >= 1 && rating == "A") print "VIOL\t" layer "\t" count
-      next
-    }
-    { intable = 0 }
-    END {
-      if (nsec == 0) print "ERR\t「## 現在の評価」の見出しの行がありません"
-      else if (nsec > 1) print "ERR\t「## 現在の評価」の見出しの行が " nsec " 行あります（1 行のはず）"
-      else if (ntables == 0) print "ERR\t「## 現在の評価」の節に、見出しの行に「人が確かめる決まりの数」の列を持つ表 2 がありません"
-      else if (ntables > 1) print "ERR\t「## 現在の評価」の節に、見出しの行に「人が確かめる決まりの数」の列を持つ表が " ntables " 個あります（表 2 の 1 個のはず）"
-      # 層の行の数は、最後に読んだ表によらずに数える（表 2 の後に表 1 があっても、行の無い表 2 を見逃さないため）
-      else if (nrows == 0) print "ERR\t表 2 に層の行が 1 行もありません"
-    }
-  ' "$1"
-}
-
-if [ -f docs/QUALITY_SCORE.md ]; then
-  while IFS="$(printf '\t')" read -r kind a b; do
-    case "$kind" in
-      ERR)
-        fail "docs/QUALITY_SCORE.md の表 2（層ごと）を読み取れません: $a（検査 14 が、層の評価の上限を確かめられません）" "$LAYER_PREMISE_FIX" ;;
-      VIOL)
-        fail "docs/QUALITY_SCORE.md の表 2（層ごと）の層 $a の評価が A なのに、人が確かめる決まりの数が $b です" \
-          "層 $a の評価を B 以下にする（$LAYER_RULE_DOC）。決まりを機械的な検査に置き換えて、その層の人が確かめる決まりの数を 0 にしたときだけ A にしてよい" ;;
-    esac
-  done <<EOF
-$(check_layer_ratings docs/QUALITY_SCORE.md)
+    if [ "$base_ok" -eq 0 ]; then
+      fail "検査の由来の記録を調べる分岐元を読めません（origin/${GITHUB_BASE_REF:-} との merge-base を求められない）" \
+        "CI の checkout で履歴をすべて取得する（fetch-depth: 0）。分岐元のブランチが origin にあることを確かめる"
+    elif [ -n "$mb" ] && g show "$mb:AGENTS.md" 2>/dev/null | grep -Eq '^ハーネスの版: [0-9]+$' \
+      && g cat-file -e "$mb:$log_path" 2>/dev/null; then
+      g diff --no-ext-diff --no-textconv --no-renames --name-only -z "$mb" -- > "$work_dir/changed.z"
+      g ls-files -z --others --exclude-standard > "$work_dir/untracked.z"
+      : > "$work_dir/hits"; : > "$work_dir/hits-untracked"
+      for src in changed untracked; do
+        while IFS= read -r -d '' f; do
+          while IFS= read -r p; do
+            [ -n "$p" ] || continue
+            case "$p" in
+              */) case "$f" in "$p"*) ;; *) continue ;; esac ;;
+              *) [ "$f" = "$p" ] || continue ;;
+            esac
+            printf '%s\n' "$f" >> "$work_dir/hits"
+            [ "$src" = untracked ] && printf '%s\n' "$f" >> "$work_dir/hits-untracked"
+            break
+          done <<EOF
+$def_paths
 EOF
+        done < "$work_dir/$src.z"
+      done
+      if [ -s "$work_dir/hits" ]; then
+        exempt=1
+        [ -s "$work_dir/hits-untracked" ] && exempt=0
+        rules="$(conf_all record_exempt_line_re)"
+        [ -n "$rules" ] || exempt=0
+        if [ "$exempt" -eq 1 ]; then
+          set --
+          while IFS= read -r r; do set -- "$@" "$r"; done <<EOF
+$rules
+EOF
+          diff_args=()
+          while IFS= read -r f; do diff_args[${#diff_args[@]}]="$f"; done < "$work_dir/hits"
+          g diff --no-ext-diff --no-textconv --no-renames --no-color -U0 "$mb" -- "${diff_args[@]}" | perl -e "$EXEMPT_PL" "$@" || exempt=0
+        fi
+        if [ "$exempt" -eq 0 ]; then
+          added="$(g diff --no-ext-diff --no-textconv --no-renames --no-color -U0 "$mb" -- "$log_path" | awk '
+            /^\+\+\+/ { next }
+            /^\+/ {
+              l = substr($0, 2)
+              if (l ~ /^\|/ && l !~ /^\|[-:| ]+\|?[ \t]*$/ && index(l, "元の指摘の出どころ") == 0) n++
+            }
+            END { print n + 0 }')"
+          if [ "$added" -eq 0 ]; then
+            fail "検査を定めるファイル（$(sort -u "$work_dir/hits" | tr '\n' ' ' | sed 's/ $//')）を変えたのに、検査の由来の記録 $log_path に行が足されていません（分岐元 $(g rev-parse --short "$mb")）" \
+              "$log_path の記録の表に、この変更の行を 1 行足す（書き方は $log_path の「使い方」。依存やアクションの版だけを置き換える変更は、scripts/harness/harness.conf の record_exempt_line_re の形に合えば求めない）"
+          fi
+        fi
+      fi
+    fi
+  fi
 fi
+
+# 13. 写しの中身（冒頭の harness-copy の行の sha256 と、冒頭の行を除いた中身の sha256 を比べる）
+COPY_PL='
+  use Digest::SHA qw(sha256_hex);
+  my ($mode, @region_files) = @ARGV;
+  sub slurp { my $f = shift; open(my $fh, "<:raw", $f) or return undef; local $/; my $c = <$fh>; close $fh; return $c }
+  if ($mode eq "files") {
+    local $/ = "\0";
+    while (my $f = <STDIN>) {
+      chomp $f;
+      next if -l $f || ! -f $f;
+      # 冒頭の 6 行に harness-copy の行が無いファイルは、全体を読まない
+      open(my $hd, "<:raw", $f) or do { print "$f\t読めない\n"; next };
+      my ($k, $has) = (0, 0);
+      { local $/ = "\n"; while ($k < 6 && defined(my $x = <$hd>)) { $has = 1 if $x =~ m{^(?:#|//|<!--) harness-copy: }; $k++ } }
+      close $hd;
+      next unless $has;
+      my $c = slurp($f);
+      if (!defined $c) { print "$f\t読めない\n"; next }
+      my @l = split /(?<=\n)/, $c;
+      my ($i, $pre) = (0, "");
+      if (@l && $l[0] =~ /^#!/) { $pre = $l[0]; $i = 1 }
+      my @h;
+      while ($i < @l && $l[$i] =~ m{^(?:#|//|<!--) harness-copy: }) { push @h, $l[$i]; $i++ }
+      next unless @h;
+      my ($want) = join("", @h) =~ m{harness-copy: sha256=([0-9a-f]{64})};
+      if (!$want) { print "$f\t冒頭の harness-copy の行に sha256 が無い\n"; next }
+      my $body = $pre . join("", @l[$i .. $#l]);
+      print "$f\t冒頭の行を除いた中身の sha256 が、冒頭の行の値と違う\n" if sha256_hex($body) ne $want;
+    }
+  } else {
+    for my $f (@region_files) {
+      next if -l $f || ! -f $f;
+      my $c = slurp($f);
+      next unless defined $c;
+      my @l = split /(?<=\n)/, $c;
+      for (my $i = 0; $i < @l; $i++) {
+        next unless $l[$i] =~ /^<!-- ([a-z0-9-]+):begin -->\n?$/;
+        my $n = $1;
+        next unless $i + 1 < @l && $l[$i + 1] =~ /^<!-- harness-copy: region=\Q$n\E .*sha256=([0-9a-f]{64}) -->\n?$/;
+        my $want = $1;
+        my ($j, $body) = ($i + 2, $l[$i]);
+        while ($j < @l && $l[$j] !~ /^<!-- \Q$n\E:end -->\n?$/) { $body .= $l[$j]; $j++ }
+        if ($j >= @l) { print "$f の区画 $n\t区画の終わりの印が無い\n"; next }
+        $body .= $l[$j];
+        print "$f の区画 $n\t区画の中身の sha256 が、harness-copy の行の値と違う\n" if sha256_hex($body) ne $want;
+      }
+    }
+  }
+'
+g ls-files -z --cached --others --exclude-standard > "$work_dir/all-files.z"
+md_files=()
+while IFS= read -r -d '' f; do
+  case "$f" in *.md) md_files[${#md_files[@]}]="$f" ;; esac
+done < "$work_dir/all-files.z"
+copy_problems="$( { perl -e "$COPY_PL" files < "$work_dir/all-files.z"; [ "${#md_files[@]}" -eq 0 ] || perl -e "$COPY_PL" regions "${md_files[@]}"; } )"
+while IFS="$(printf '\t')" read -r what why; do
+  [ -n "$what" ] || continue
+  fail "写し $what の中身が合いません（${why}）" \
+    "写しは手で直さない。規約の正本を直して、project-harness-init の「導入済みのプロジェクトの更新」で置き換えるか、git で元に戻す。プロジェクト専用の検査は scripts/harness/checks.d/ に置く"
+done <<EOF
+$copy_problems
+EOF
+
+# 追加の検査の口（起動元の scripts/harness/checks.d/。決まりは冒頭の説明と checks.d/README.md）
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  rel="scripts/harness/checks.d/$(basename "$f")"
+  if [ -L "$f" ] || [ ! -f "$f" ]; then
+    fail "追加の検査 $rel がシンボリックリンクか、通常のファイルではありません" "$rel を、実体のファイルとして置く"
+    continue
+  fi
+  if ! name="$(extra_check_name "$f")"; then
+    fail "追加の検査 $rel に「# 検査の名前: <短い名前>」の行がちょうど 1 行ありません" \
+      "$rel の 2 行目以降の冒頭の注釈に、「# 検査の名前: <短い名前>」の行をちょうど 1 行書く（scripts/harness/checks.d/README.md）"
+    continue
+  fi
+  set +e
+  ( cd -- "$ROOT" && HARNESS_ROOT="$ROOT" HARNESS_ENGINE_DIR="$SELF_DIR" bash "$f" < /dev/null ) > "$work_dir/extra.out" 2>&1
+  rc=$?
+  set -e
+  case "$rc" in
+    0) ;;
+    1)
+      cat "$work_dir/extra.out" >&2
+      n="$(grep -c '^check-docs: NG: ' "$work_dir/extra.out" || true)"
+      [ "$n" -gt 0 ] || n=1
+      errors=$((errors + n)) ;;
+    *)
+      fail "追加の検査 ${name}（${rel}）を実行できませんでした（終了コード ${rc}）" \
+        "$rel を bash で直接実行して、出力を確かめる（終了コードは 0 が合格、1 が不合格。ほかは実行できなかったとみなす）" ;;
+  esac
+done <<EOF
+$(extra_check_files)
+EOF
+
+# 直した後に確かめ直すコマンド（AGENTS.md の「## 検査のコマンド」の表の、1 列目が「文書（」で始まる行のもの）
+docs_check_command() {
+  local c=""
+  if [ -f AGENTS.md ]; then
+    c="$(awk '/^## /{ on = ($0 == "## 検査のコマンド"); next } on && /^\| *文書（/' AGENTS.md | head -n 1 | awk -F '|' '{ print $3 }' \
+      | sed -n 's/^[^`]*`\([^`]*\)`.*$/\1/p')"
+  fi
+  printf '%s\n' "${c:-bash scripts/harness/check-docs.sh}"
+}
 
 if [ "$errors" -gt 0 ]; then
-  echo "check-docs: $errors 件の問題があります" >&2
+  echo "check-docs: $errors 件の問題があります（直した後に $(docs_check_command) で確かめ直す）" >&2
   exit 1
 fi
 echo "check-docs: OK（ハーネスの版 ${version}）"

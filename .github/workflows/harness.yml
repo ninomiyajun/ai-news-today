@@ -24,7 +24,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          # 変更の範囲の各コミットを検査するため、履歴をすべて取得する
+          # 変更の範囲の各コミットを検査するためと、検査の由来の記録の検査が、分岐元（pull request の base）との merge-base を
+          # 求めるため、履歴をすべて取得する
           fetch-depth: 0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -63,7 +64,7 @@ jobs:
         run: npm run test
       - name: check-docs
         run: npm run check:docs
-      - name: test-harness（文書の検査、早期通知、lint の規則、依存の規則、定期の走査の試験）
+      - name: test-harness（文書の検査、早期通知、lint の規則、依存の規則、定期の走査、段の読み取り、検査の由来の記録、このプロジェクトの設定の試験）
         run: npm run test:harness
       - name: check-arch
         run: npm run check:arch
