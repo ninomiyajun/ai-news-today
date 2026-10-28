@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # harness-copy: source=home/agents/skills/project-harness-init/assets/harness/check-docs.test.sh
-# harness-copy: version=rules-2026.10.25-1
-# harness-copy: sha256=17a6f8777985aa5a8b2813d8faa8d3ab27a74c74b2b5e47ec788e84f71a9c3dd
+# harness-copy: version=rules-2026.10.28-1
+# harness-copy: sha256=73720a8ea266e1866d46397611b1ab98088a68b96f929f51890f4e188c23a342
 # harness-copy: この 4 行と本体は手で変えない。正本を直して project-harness-init の「導入済みのプロジェクトの更新」で置き換える
 # check-docs.sh の試験（検査 8〜13、設定のファイル、追加の検査の口）。ハーネスの検査の本体の写しで、どのプロジェクトでも
 # 同じ中身を置く。手元で使うコマンドは下の TEST_COMMAND（CI はこのスクリプトを bash で直接呼ぶ）。最後に、このファイルの
@@ -1083,6 +1083,34 @@ if [ "$(printf '%s\n' "$names" | wc -l | tr -d ' ')" -eq 14 ] && [ "$(printf '%s
 else
   echo "NG: --print checks の出力が違います" >&2
   printf '%s\n' "$names" | sed 's/^/    /' >&2
+  failed=$((failed + 1))
+fi
+# 冒頭の注釈の検査の一覧（「#   1. …」の形の行）の番号が 1 から欠けずに並び、その数が検査の数（追加の検査の無い見本の
+# --print checks の行の数）と同じか。番号を集めるのは、冒頭の注釈のうち最初の注釈でない行（set -euo pipefail の手前）
+# まで（本文の見出しの「# 1.」などは数えない）。$1 = 確かめる check-docs.sh、$2 = 見本を作る置き場。合えば 0
+header_numbers_match() {
+  local nums count
+  make_base "$2"
+  cp "$1" "$2/scripts/harness/check-docs.sh"
+  nums="$(awk '!/^#/ { exit } /^# +[0-9]+\./ { sub(/^# +/, ""); sub(/\..*$/, ""); print }' "$1")"
+  count="$(bash "$2/scripts/harness/check-docs.sh" --print checks 2> /dev/null | wc -l | tr -d ' ')"
+  [ -n "$nums" ] && [ "$count" -gt 0 ] || return 1
+  printf '%s\n' "$nums" | awk -v n="$count" '$0 != NR { bad = 1 } END { exit (bad || NR != n) ? 1 : 0 }'
+}
+if header_numbers_match "$CHECK" "$TMP_ROOT/header-numbers"; then
+  echo "ok: 冒頭の注釈の検査の一覧の番号が 1 から欠けずに並び、数が --print checks と同じ"
+  passed=$((passed + 1))
+else
+  echo "NG: check-docs.sh の冒頭の注釈の検査の一覧の番号が、1 から欠けずに並んでいないか、数が --print checks の行の数と違います" >&2
+  failed=$((failed + 1))
+fi
+# 照合が働くことの確かめ: 冒頭の一覧から 5 番の行を抜いた写しでは合わない
+awk '!/^#/ { body = 1 } body || !/^# +5\./' "$CHECK" > "$TMP_ROOT/check-docs-gap.sh"
+if ! header_numbers_match "$TMP_ROOT/check-docs-gap.sh" "$TMP_ROOT/header-numbers-gap"; then
+  echo "ok: 冒頭の注釈の検査の一覧の番号が 1 つ欠けた写しでは、照合が合わない"
+  passed=$((passed + 1))
+else
+  echo "NG: 冒頭の注釈の検査の一覧の番号が 1 つ欠けた写しでも、照合が合ってしまいます" >&2
   failed=$((failed + 1))
 fi
 re="$(bash "$d/scripts/harness/check-docs.sh" --print arch-path-re 2>&1 || true)"

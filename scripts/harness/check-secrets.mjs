@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // harness-copy: source=home/agents/skills/project-harness-init/assets/parts/node-secrets/assets/check-secrets.mjs
-// harness-copy: version=rules-2026.10.25-1
-// harness-copy: sha256=602a8424b8f4ce7c4f3fee4a2fb3714f6edb738bd369fc25e3207e602d96f83d
+// harness-copy: version=rules-2026.10.28-1
+// harness-copy: sha256=85805886a640435a373a0d96041ddb32aa9b94e4cbe779cfc7d90ea5adba78f9
 // harness-copy: この 4 行と本体は手で変えない。正本を直して project-harness-init の「導入済みのプロジェクトの更新」で置き換える
 // 秘匿値の検査の本体。入口は scripts/harness/check-secrets.sh（作業ツリーは引数なし、push する範囲は --commits）。
 // CI はこのファイルを node で直接呼ぶ（npm の pre と post のスクリプトを動かさないため）。
@@ -10,7 +10,8 @@
 //   作業ツリー（引数なし）: git の一覧（追跡済みのファイルと、.gitignore で除外していない未追跡のファイル）を、
 //     作業ツリーの現在の中身で調べる。
 //   コミット（--commits [--remote <名前>] [git rev-list の引数]）: 指定した範囲の各コミットに記録された中身を、
-//     git から取り出して調べる。範囲のコミットメッセージと、手元のすべての注釈付きのタグの注釈も、単純な内容検査で調べる。
+//     git から取り出して調べる。範囲のコミットメッセージと、手元のすべての注釈付きのタグの注釈も、一時ファイルに書いて
+//     secretlint と単純な内容検査の両方で調べる。
 //     範囲を省くと「HEAD --branches --tags --not --remotes=<名前>」（手元のすべてのブランチとタグ、HEAD から
 //     到達でき、push 先のリモートの追跡ブランチから到達できないコミット。名前の既定は origin。初回の push ではすべて）。
 //     範囲のコミットが 0 件でも、タグの注釈は調べる。
@@ -22,9 +23,11 @@
 //     secretlint も単純な内容検査も、中の文字を読めないため）
 //   - secretlint の除外のファイル（名前が .secretlintignore で始まるもの）と、secretlint の無効化のコメント
 //   - 秘匿値が見つかったファイル、コミットメッセージ、タグの注釈
+//   - NUL バイトか secretlint の無効化のコメントを含むコミットメッセージとタグの注釈
 // secretlint が既定で対象外にするファイル（.secretlintrc.* など）と、文字のファイルでないファイルは、
 // この中の単純な内容検査（SIMPLE_PATTERNS）で調べる。既知のバイナリの拡張子のファイルは、UTF-16LE と UTF-16BE で
-// 読んだ中身も同じ検査に掛ける。
+// 読んだ中身も同じ検査に掛ける。コミットメッセージとタグの注釈は、secretlint と単純な内容検査の両方に掛ける。
+// 失敗の一覧には、どのコミットかタグかの札だけを出し、見つかった値は出さない（値を伏せた表示は secretlint に任せる）。
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -106,14 +109,15 @@ const catBatch = async (shas, onObject) => {
   }
 };
 
-const problems = { unreadable: [], symlinks: [], nulFiles: [], ignoreFiles: [], disableComments: [] };
+const problems = { unreadable: [], symlinks: [], nulFiles: [], nulTexts: [], ignoreFiles: [], disableComments: [], disableTexts: [] };
 
 // 中身に NUL バイトを含んでよい、既知のバイナリの拡張子（今のリポジトリにあるものと、よくある画像とフォント）。
 // これ以外の拡張子で NUL バイトを含むファイルは、UTF-16 の文字のファイルなどの読めないファイルとして失敗にする。
 const BINARY_EXTS = new Set(["ico", "png", "jpg", "jpeg", "gif", "webp", "avif", "bmp", "woff", "woff2", "ttf", "otf", "eot"]);
 const isKnownBinary = (rel) => BINARY_EXTS.has(path.extname(rel).slice(1).toLowerCase());
 
-// 作業ツリーの一覧を作る。返り値の各要素は { abs: 読むパス, rel: リポジトリでのパス, label: 表示名 }。
+// 作業ツリーの一覧を作る。返り値の各要素は { abs: 読むパス, rel: リポジトリでのパス, label: 表示名 }
+// （コミットメッセージとタグの注釈の一時ファイルは、ほかに isText: true を持つ）。
 const collectWorktree = () => {
   const listed = [...new Set(splitNul(gitOk(["ls-files", "-z", "--cached", "--others", "--exclude-standard"])))];
   const deleted = new Set(splitNul(gitOk(["ls-files", "-z", "--deleted"])));
@@ -133,7 +137,7 @@ const collectWorktree = () => {
     else if (st.isFile()) entries.push({ abs, rel, label: rel });
     else problems.unreadable.push(rel); // ディレクトリ（サブモジュールなど）
   }
-  return { entries, texts: [], note: deletedCount > 0 ? `作業ツリーで削除した ${deletedCount} 件は対象外` : "" };
+  return { entries, note: deletedCount > 0 ? `作業ツリーで削除した ${deletedCount} 件は対象外` : "" };
 };
 
 // --commits の引数を読む。返り値は git rev-list に渡す引数。
@@ -159,7 +163,8 @@ const parseCommitArgs = (args) => {
 };
 
 // コミットの中身を一時ディレクトリへ取り出して一覧を作る。同じパスと同じ中身の組は 1 回だけ調べる。
-// 範囲のコミットメッセージと、手元の注釈付きのタグの注釈は、texts（単純な内容検査だけに掛ける文字列）として返す。
+// 範囲のコミットメッセージと、手元の注釈付きのタグの注釈は、取り出した生のバイト列のまま一時ディレクトリの texts/ に
+// 1 つずつ書き、isText の付いた要素として一覧に加える（secretlint と単純な内容検査の両方に掛けるため）。
 const collectCommits = async (revArgs, tmp) => {
   const commits = gitOk(["rev-list", ...revArgs, "--"]).toString().split("\n").filter(Boolean);
   // 0 件でも終えない（タグの注釈は範囲と関係なく調べる）
@@ -197,23 +202,29 @@ const collectCommits = async (revArgs, tmp) => {
 
   // コミットメッセージとタグの注釈（見出しの行の後ろ）。タグはどれが push されるか分からないので、手元のすべてを調べる。
   const texts = [];
-  const afterHeader = (body) => {
+  const textDir = path.join(tmp, "texts");
+  fs.mkdirSync(textDir, { recursive: true });
+  const addText = (label, body) => {
     const i = body.indexOf("\n\n");
-    return i < 0 ? "" : body.subarray(i + 2).toString("latin1");
+    const text = i < 0 ? Buffer.alloc(0) : body.subarray(i + 2);
+    if (text.length === 0) return; // 空のメッセージには調べる中身が無い
+    const rel = `texts/${texts.length + 1}.txt`;
+    const abs = path.join(tmp, rel);
+    fs.writeFileSync(abs, text);
+    texts.push({ abs, rel, label, isText: true });
   };
-  await catBatch(commits, (sha, type, body) => texts.push({ label: `${sha.slice(0, 12)}（コミットメッセージ）`, text: afterHeader(body) }));
+  await catBatch(commits, (sha, type, body) => addText(`${sha.slice(0, 12)}（コミットメッセージ）`, body));
   const tags = gitOk(["for-each-ref", "--format=%(objecttype) %(objectname) %(refname)", "refs/tags"])
     .toString()
     .split("\n")
     .filter((l) => l.startsWith("tag "))
     .map((l) => l.split(" "));
   const tagNames = new Map(tags.map(([, sha, ref]) => [sha, ref]));
-  await catBatch([...tagNames.keys()], (sha, type, body) => texts.push({ label: `${tagNames.get(sha)}（タグの注釈）`, text: afterHeader(body) }));
+  await catBatch([...tagNames.keys()], (sha, type, body) => addText(`${tagNames.get(sha)}（タグの注釈）`, body));
 
   return {
-    entries: [...seen.values()],
-    texts,
-    note: `コミット ${commits.length} 件のメッセージと、注釈付きのタグ ${tagNames.size} 件の注釈も単純な内容検査で調べた`,
+    entries: [...seen.values(), ...texts],
+    note: `コミット ${commits.length} 件のメッセージと、注釈付きのタグ ${tagNames.size} 件の注釈も、secretlint と単純な内容検査で調べた`,
   };
 };
 
@@ -279,8 +290,8 @@ const main = async () => {
     });
   }
   {
-    const one = () => ({ entries: [{ abs: argv[1], rel: path.basename(argv[1]), label: path.basename(argv[1]) }], texts: [], note: "" });
-    const { entries, texts, note } = commitMode ? await collectCommits(revArgs, tmp) : fileMode ? one() : collectWorktree();
+    const one = () => ({ entries: [{ abs: argv[1], rel: path.basename(argv[1]), label: path.basename(argv[1]) }], note: "" });
+    const { entries, note } = commitMode ? await collectCommits(revArgs, tmp) : fileMode ? one() : collectWorktree();
     // コミットの検査は、範囲のコミットが 0 件でもタグの注釈を調べるので、ファイルが無くても続ける
     if (!commitMode && entries.length === 0 && problems.symlinks.length === 0 && problems.unreadable.length === 0) {
       die("対象のファイルがありません");
@@ -289,12 +300,12 @@ const main = async () => {
     // secretlint の除外を、ファイルを足すだけで働かせないための検査と、NUL バイトを含むファイルの検査
     const readable = [];
     for (const e of entries) {
-      if (path.basename(e.rel).startsWith(".secretlintignore") || path.basename(e.rel) === UNUSED_IGNORE_NAME) {
+      if (!e.isText && (path.basename(e.rel).startsWith(".secretlintignore") || path.basename(e.rel) === UNUSED_IGNORE_NAME)) {
         problems.ignoreFiles.push(e.label);
       }
       const buf = fs.readFileSync(e.abs);
-      if (buf.includes(DISABLE_MARK)) problems.disableComments.push(e.label);
-      if (buf.includes(0) && !isKnownBinary(e.rel)) problems.nulFiles.push(e.label);
+      if (buf.includes(DISABLE_MARK)) (e.isText ? problems.disableTexts : problems.disableComments).push(e.label);
+      if (buf.includes(0) && !isKnownBinary(e.rel)) (e.isText ? problems.nulTexts : problems.nulFiles).push(e.label);
       else readable.push(e);
     }
 
@@ -342,25 +353,25 @@ const main = async () => {
         forSimple.push(e);
       }
     }
-    // --file では、単純な内容検査も必ず掛ける（公開する前の最後の確かめなので、secretlint の規則の外の形も拾う）
-    if (fileMode) {
-      for (const e of readable) {
-        if (!simpleSet.has(e)) {
-          simpleSet.add(e);
-          forSimple.push(e);
-        }
+    // --file のファイルと、コミットメッセージとタグの注釈には、単純な内容検査も必ず掛ける（--file は公開する前の最後の
+    // 確かめなので、secretlint の規則の外の形も拾う。メッセージと注釈は、前から単純な内容検査で調べていた形を落とさない）
+    for (const e of readable) {
+      if ((fileMode || e.isText) && !simpleSet.has(e)) {
+        simpleSet.add(e);
+        forSimple.push(e);
       }
     }
-    // 見つかった値を伏せた形で表示する（secretlint の既定の maskSecrets）
+    // 見つかった値を伏せた形で表示する（secretlint の既定の maskSecrets）。コミットの検査では、表示に出る一時ファイルの
+    // パスが、どのコミットのファイルか、どのコミットメッセージかタグの注釈かを先に出す
+    if (commitMode) {
+      for (const e of withFindings) console.error(`check-secrets: 次の表示の ${e.abs} は ${e.label}`);
+    }
     for (const files of chunkFiles(withFindings.map((e) => e.abs))) {
       spawnSync(SECRETLINT, [...common, "--", ...files], { cwd: ROOT, stdio: "inherit" });
     }
     for (const e of withFindings) findings.push(`${e.label}（secretlint）`);
     for (const e of forSimple) {
       for (const name of simpleScan(e)) findings.push(`${e.label}（単純な内容検査: ${name}）`);
-    }
-    for (const t of texts) {
-      for (const name of simpleScanText(t.text)) findings.push(`${t.label}（単純な内容検査: ${name}）`);
     }
 
     const summary =
@@ -384,8 +395,18 @@ const main = async () => {
       "NUL バイトを含むファイル（UTF-16 で書いた文字のファイルなど）",
       `文字のファイルは UTF-8 で保存し直す（UTF-16 などの中身は検査で読めないため）。バイナリのファイルは既知の拡張子（${[...BINARY_EXTS].join("、")}）にする`,
     );
+    report(
+      problems.nulTexts,
+      "NUL バイトを含むコミットメッセージとタグの注釈",
+      "メッセージ（タグの注釈）から NUL を除いて作り直す（push していないコミットは rebase などでメッセージを直し、タグは注釈を直して作り直す。NUL を含む中身は検査で読めないため）",
+    );
     report(problems.ignoreFiles, "secretlint の除外のファイル", "このファイルを消す。誤検出は .secretlintrc.json の規則の設定で直し、ADR に理由を書く");
     report(problems.disableComments, "secretlint の無効化のコメント", "コメントを消す。誤検出は .secretlintrc.json の規則の設定で直し、ADR に理由を書く");
+    report(
+      problems.disableTexts,
+      "secretlint の無効化のコメントを含むコミットメッセージとタグの注釈",
+      "メッセージからその語を消して書き直す（push していないコミットは rebase などでメッセージを直し、タグは注釈を直して作り直す）。誤検出は .secretlintrc.json の規則の設定で直し、ADR に理由を書く",
+    );
     report(findings, "秘匿値の疑い", "値を消し、鍵を無効にして作り直す。コミット済みなら履歴（コミットメッセージとタグを含む）からも消す");
     if (failed) process.exit(1);
     console.log("check-secrets: 秘匿値は見つかりませんでした");

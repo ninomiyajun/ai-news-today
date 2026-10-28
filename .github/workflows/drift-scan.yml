@@ -21,6 +21,7 @@ on:
       - docs/exec-plans/tech-debt-tracker.md
       - AGENTS.md
       - package.json
+      - package-lock.json
       - .secretlintrc.json
 
 permissions:
