@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # harness-copy: source=home/agents/skills/project-harness-init/assets/harness/drift-scan.sh
-# harness-copy: version=rules-2026.10.25-1
-# harness-copy: sha256=eba1ee6ae87a4d17214d4b3183db3cf95204e614152a48bc81d7867689b44e37
+# harness-copy: version=rules-2026.10.28-1
+# harness-copy: sha256=18d41ec4cd6f5d3c63f5bc87a48496df15f2f0b1f0df14cc5aeef007c2c8e9e6
 # harness-copy: この 4 行と本体は手で変えない。正本を直して project-harness-init の「導入済みのプロジェクトの更新」で置き換える
 # 定期の走査（drift-scan）。文書とコードのずれの材料を集めて、報告 report.md を 1 つだけ書く。ハーネスの検査の本体の写しで、
 # どのプロジェクトでも同じ中身を置く。技術ごとの違い（検査の段の読み取りと実行）は、部品が置く scripts/harness/stack-adapter.sh
@@ -34,6 +34,8 @@
 #     名前のセルが、使えない文字（英数字、/._:- と空白、日本語のほかの文字）を含むか長すぎる行も 4/表 に回す。
 #   3 と 4 の表は共通に、見出しの直後が列の数の同じ区切り行（|---| の形）でない表、制御文字（0x00〜0x1f と 0x7f）を含む行を
 #     読まずに 3/表・4/表 にする。中間のファイルで区切りに使う 0x1f で欄をずらされないよう、分けた後にも各欄の形を確かめ直す。
+#     表は空白だけの行か別の塊の始まり（見出しなど。GFM の開始条件。GFM_TABLE_AWK の注釈）で終わる。表の直後に空行を
+#     挟まずに続く、縦線で始まらない行は表の続きになるので、読まずに 3/表・4/表 にする（表は空行で終える）。
 #   2 と 3 で読むパスは、シンボリックリンク（親ディレクトリのリンクを含む）を解決した実体がリポジトリの根の下にあるものだけ。
 #   5 実行の情報（5/<項目>）: 契機（GITHUB_ACTIONS が無いときは local）、日時（UTC）、対象のコミット、間隔の日数
 #     （ワークフローの注釈の行から読む）、成果物の保存期間、origin/<既定のブランチ>（走査の前に git fetch で取る）の
@@ -236,6 +238,46 @@ ATTN=0
 # 中間のファイルの区切り（空の欄を詰めないよう、空白でない文字にする）
 SEP="$(printf '\037')"
 
+# 項目 3 と 4 の表を読む awk に前置きする関数（GFM の表の終わり方に合わせる）。
+#   table_row(s): 行頭の空白が 0〜3 個の後に縦線が続く行なら 1（表の行として読む。読む前に行頭の空白を除く）
+#   ends_table(s): 空白だけの行か、別の塊の始まりなら 1。別の塊は GFM の開始条件で決める（行頭の空白は 0〜3 個）:
+#     ATX 見出し（# が 1〜6 個の後に空白か行の終わり。#abc は見出しでない）、引用（>）、囲み（``` で情報文字列にバッククォートが無いもの、か ~~~）、
+#     区切り線（* か - か _ が 3 個以上で、間に空白があってよい）、箇条書き（- * + の後に空白）、順序付きの箇条書き
+#     （数字 1〜9 桁の後に . か ) と空白）、HTML ブロックの 7 種類の開始条件（script・pre・style・textarea の開きタグ、
+#     <!-- 、<? 、<! と大文字の英字、<![CDATA[ （この 2 つは大文字と小文字を区別する）、決まった名前のタグの開きか閉じ、それ以外の開きタグか閉じタグだけの行）。
+#     <https://example.test> のような自動リンクは HTML ブロックではない。
+#   表の中で、表の行でも ends_table でもない行は、GFM では表の続きの行になるので、表を終えずに誤りにする。
+# 繰り返しの回数の指定（{n,m}）は使わない（awk の実装によって効かないため）。
+GFM_TABLE_AWK='
+function lead_spaces(s,   t) { t = s; sub(/^ +/, "", t); return length(s) - length(t) }
+function table_row(s,   n) { n = lead_spaces(s); return n <= 3 && substr(s, n + 1, 1) == "|" }
+function ends_table(s,   n, t, u, l, q, attr) {
+  if (s ~ /^[ \t]*$/) return 1
+  n = lead_spaces(s)
+  if (n > 3) return 0
+  t = substr(s, n + 1)
+  if (match(t, /^#+/) && RLENGTH <= 6 && substr(t, RLENGTH + 1) ~ /^([ \t]|$)/) return 1
+  if (t ~ /^>/) return 1
+  # バッククォートの囲みは、情報文字列（印の後ろ）にバッククォートを含まないときだけ。チルダの囲みに、この制約は無い
+  if (match(t, /^```+/) && index(substr(t, RLENGTH + 1), "`") == 0) return 1
+  if (t ~ /^~~~/) return 1
+  u = t; gsub(/[ \t]/, "", u)
+  if (u ~ /^(\*\*\*+|---+|___+)$/) return 1
+  if (t ~ /^[-*+][ \t]/) return 1
+  if (match(t, /^[0-9]+/) && RLENGTH <= 9 && substr(t, RLENGTH + 1) ~ /^[.)][ \t]/) return 1
+  l = tolower(t)
+  if (l ~ /^<(script|pre|style|textarea)([ \t>]|$)/) return 1
+  # HTML の宣言（<! の直後が大文字の英字）と CDATA は、小文字にする前の文字列で判定する（大文字と小文字を区別する）
+  if (t ~ /^<!--/ || t ~ /^<\?/ || t ~ /^<![A-Z]/ || t ~ /^<!\[CDATA\[/) return 1
+  if (l ~ "^</?(address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|section|source|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul)([ \t>]|/>|$)") return 1
+  q = sprintf("%c", 39)
+  attr = "[ \t]+[a-z_:][a-z0-9_.:-]*([ \t]*=[ \t]*([^ \t\"" q "=<>`]+|" q "[^" q "]*" q "|\"[^\"]*\"))?"
+  if (l ~ ("^<[a-z][a-z0-9-]*(" attr ")*[ \t]*/?>[ \t]*$")) return 1
+  if (l ~ /^<\/[a-z][a-z0-9-]*[ \t]*>[ \t]*$/) return 1
+  return 0
+}
+'
+
 # 報告に書く値の文字の検査。許す文字（tr の集合）だけからなり、長さ（バイト）が上限以下なら 0
 MAX_FIELD_BYTES=200
 only_chars() { # 引数: 値、許す文字の集合
@@ -379,12 +421,12 @@ TD_HEADER='| 識別子 | 見つけた日 | 場所 | 内容 | 見つけた作業 
 } >"$TMP/sec3"
 # 出力: ERR\t<行>\t<理由> / ROW<区切り><識別子><区切り><見つけた日><区切り><場所のセル><区切り><行>
 if [ -f "$TRACKER" ]; then
-  awk -v h="$TD_HEADER" -v sep="$SEP" '
+  awk -v h="$TD_HEADER" -v sep="$SEP" "$GFM_TABLE_AWK"'
     function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
     /^## / { sec = $0; intable = 0; next }
     sec != "## 一覧" { next }
-    /^\|/ {
-      line = $0; sub(/[ \t]+$/, "", line)
+    table_row($0) {
+      line = $0; sub(/^ +/, "", line); sub(/[ \t]+$/, "", line)
       if (!intable) { intable = 1; tables++; rowno = 0; bad = 0; hcols = split(line, hc, "|") - 2
         if (line != h) { bad = 1; printf "ERR\t%d\t見出しの行が決まった形と違う\n", FNR }
         next }
@@ -403,6 +445,7 @@ if [ -f "$TRACKER" ]; then
       if (id !~ /^TD-[0-9]+$/) { printf "ERR\t%d\t識別子が TD-<数> の形でない\n", FNR; next }
       print "ROW" sep id sep trim(c[3]) sep trim(c[4]) sep FNR
       next }
+    intable && !ends_table($0) { printf "ERR\t%d\t表の行が縦線で始まらない（表は空行で終える）\n", FNR; next }
     { intable = 0 }
     END { if (tables != 1) print "ERR\t0\t「## 一覧」の節に表がちょうど 1 つない" }
   ' "$TRACKER" >"$TMP/td-raw"
@@ -463,7 +506,7 @@ if [ -f "$QS" ]; then
   # 出力: REVIEW\t<日数> / ERR\t<行>\t<理由> / ROW<区切り><領域|層><区切り><名前><区切り><評価><区切り>
   #       <識別子をコンマで><区切り><日付><区切り><コミット（列が無ければ -）><区切り><行>
   #       （識別子は空のことがあるので、ROW だけ区切りを SEP にする）。表は見出しの列の名前で読む
-  awk -v sep="$SEP" '
+  awk -v sep="$SEP" "$GFM_TABLE_AWK"'
     function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
     function err(msg) { printf "ERR\t%d\t%s\n", FNR, msg }
     # 識別子のセルを読む。正しければコンマで区切った識別子（- のときは空）、誤りなら "!"
@@ -483,8 +526,8 @@ if [ -f "$QS" ]; then
     }
     NR == FNR { scripts[$0] = 1; next }
     /^## / { sec = $0; intable = 0; next }
-    /^\|/ {
-      line = $0; sub(/[ \t]+$/, "", line)
+    table_row($0) {
+      line = $0; sub(/^ +/, "", line); sub(/[ \t]+$/, "", line)
       if (!intable) { intable = 1; header = line; rowno = 0; hcols = split(line, hc, "|") - 2
         delete col
         for (i = 2; i <= hcols + 1; i++) { x = trim(hc[i]); if (x != "" && !(x in col)) col[x] = i }
@@ -524,6 +567,8 @@ if [ -f "$QS" ]; then
       if (cc && (cm !~ /^[0-9a-f]+$/ || length(cm) < 7 || length(cm) > 40)) { err("現在の評価の表の評価したコミットが 16 進の 7〜40 字でない"); next }
       printf "ROW%s%s%s%s%s%s%s%s%s%s%s%s%s%d\n", sep, (kind == "t1" ? "領域" : "層"), sep, name, sep, rating, sep, idl, sep, d, sep, cm, sep, FNR
       next }
+    # 表の直後に空行を挟まずに続く行（「見直しの目安」の行を含む）は表の続きなので、読まずに誤りにする
+    intable && !ends_table($0) { err("表の行が縦線で始まらない（表は空行で終える）"); next }
     { intable = 0
       if (sec == "## 現在の評価" && $0 ~ /^見直しの目安: [0-9]+ 日[ \t]*$/) {
         v = $0; sub(/^見直しの目安: /, "", v); sub(/ 日.*$/, "", v); review = v; reviewcount++ } }

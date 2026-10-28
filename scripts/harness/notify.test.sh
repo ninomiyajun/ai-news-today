@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # harness-copy: source=home/agents/skills/project-harness-init/assets/harness/notify.test.sh
-# harness-copy: version=rules-2026.10.25-1
-# harness-copy: sha256=ebea459c1debf52b651aaa125cbc2976687571c56c67e1e90340a559b1ea1469
+# harness-copy: version=rules-2026.10.28-1
+# harness-copy: sha256=375114e5d4ffbfc75dce8f6243af9936ba797cbddab83f53454186f3e9f539d5
 # harness-copy: この 4 行と本体は手で変えない。正本を直して project-harness-init の「導入済みのプロジェクトの更新」で置き換える
 # 早期通知（notify.sh）と、check-docs.sh の --root、フックの設定（.claude/settings.json、.codex/hooks.json）の試験。
 # ハーネスの検査の本体の写しで、どのプロジェクトでも同じ中身を置く。手元と CI で同じ形で呼ぶ:
@@ -277,17 +277,95 @@ expect "10: notify.sh のコードが JavaScript の実行環境を呼ばない"
 expect "10: notify.sh はほかのファイルを読み込まない" no_source
 
 # --- 試験 11: フックの設定（あるときだけ。どちらも、起動元の notify.sh を呼ぶ形） ---
+# 設定は JSON として読み、hooks.PostToolUse[].hooks[] のうち type が command のものの command だけを見る（引用符の
+# 位置や空白の数、JSON の書き方の違いに左右されないため）。呼び出し元の名前の後ろは、空白、命令の区切り（; & | )）、
+# 引用符、文字列の終わりのどれかで終わること（claudex のような別の名前を通さないため）。
 json_ok() { perl -MJSON::PP -e 'local $/; open(my $f, "<", $ARGV[0]) or exit 1; JSON::PP->new->decode(<$f>); exit 0' "$1" 2> /dev/null; }
+# $1 の設定の、PostToolUse のフックの command を 1 つずつ出す（改行は空白に替える）。JSON として読めなければ失敗する
+hook_commands() {
+  perl -MJSON::PP -e 'local $/; open(my $f, "<", $ARGV[0]) or exit 1; my $o = eval { JSON::PP->new->utf8->decode(<$f>) };
+    exit 1 unless ref $o eq "HASH"; my $p = ref $o->{hooks} eq "HASH" ? $o->{hooks}{PostToolUse} : undef;
+    for my $g (ref $p eq "ARRAY" ? @$p : ()) { next unless ref $g eq "HASH" && ref $g->{hooks} eq "ARRAY";
+      for my $h (@{$g->{hooks}}) { next unless ref $h eq "HASH" && ($h->{type} // "") eq "command" && defined $h->{command} && !ref $h->{command};
+        my $c = $h->{command}; $c =~ s{[\r\n]+}{ }g; utf8::encode($c); print "$c\n" } }' "$1" 2> /dev/null
+}
+# $1 の設定の PostToolUse のフックのどれかが、$2 の正規表現（perl の書き方）に合う command を持つか
+hook_has() {
+  local cmds
+  cmds="$(hook_commands "$1")" || return 1
+  printf '%s\n' "$cmds" | perl -e 'my $re = shift; while (<STDIN>) { exit 0 if /$re/ } exit 1' "$2"
+}
+NOTIFY_END='(\s|[;&|)"'"'"']|$)'
+calls_claude() { hook_has "$1" 'notify\.sh["'"'"']?\s+claude'"$NOTIFY_END"; }
+calls_codex() { hook_has "$1" 'notify\.sh["'"'"']?\s+codex'"$NOTIFY_END"; }
+checks_docs_path() { hook_has "$1" 'check-docs\.sh'; }
+not() { ! "$@"; }
+
+# 判定の道具そのものの試験。見本の設定は、規約の正本のひな形（敷くときに .claude/settings.json と .codex/hooks.json に
+# なるもの）の今の中身と、形を変えたもの
+S11="$TMP_ROOT/t11"
+mkdir -p "$S11"
+cat > "$S11/claude.json" <<'EOF'
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/bash \"$CLAUDE_PROJECT_DIR/scripts/harness/notify.sh\" claude",
+            "timeout": 20
+          }
+        ]
+      }
+    ]
+  }
+}
+EOF
+cat > "$S11/codex.json" <<'EOF'
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "apply_patch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "root=$(git -c core.fsmonitor=false worktree list --porcelain | sed -n '1s/^worktree //p'); h=scripts/harness; harness_notify_git() { git --no-pager -C \"$root\" -c core.fsmonitor=false \"$@\"; }; test -n \"$root\" && test \"$(harness_notify_git rev-parse --is-bare-repository)\" = false && harness_notify_git cat-file -e \"HEAD:$h/notify.sh\" && harness_notify_git cat-file -e \"HEAD:$h/check-docs.sh\" && harness_notify_git diff --no-ext-diff --no-textconv --quiet HEAD -- \"$h\" && test -z \"$(harness_notify_git ls-files --others --exclude-standard -- \"$h\")\" && test -f \"$root/$h/notify.sh\" && exec /bin/bash \"$root/$h/notify.sh\" codex; printf '%s\\n' '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"早期通知は動きませんでした（起動の前の確かめが成り立ちません）。作業は止めていません。\"}}'",
+            "timeout": 20
+          }
+        ]
+      }
+    ]
+  }
+}
+EOF
+printf '%s\n' '{"hooks":{"PostToolUse":[{"matcher":"Edit|Write","hooks":[{"type":"command","command":"/bin/bash scripts/harness/notify.sh claude"}]}]}}' > "$S11/claude-bare.json"
+printf '%s\n' '{"hooks":{"PostToolUse":[{"matcher":"apply_patch","hooks":[{"type":"command","command":"/bin/bash scripts/harness/notify.sh codex"}]}]}}' > "$S11/codex-bare.json"
+printf '%s\n' '{"hooks":{"PreToolUse":[{"matcher":"Edit|Write","hooks":[{"type":"command","command":"/bin/bash scripts/harness/notify.sh claude; test -f scripts/harness/check-docs.sh"}]}]},' \
+  '"note":"/bin/bash scripts/harness/notify.sh codex"}' > "$S11/outside.json"
+printf '%s\n' '{"hooks":{"PostToolUse":[{"matcher":"Edit|Write","hooks":[{"type":"other","command":"/bin/bash scripts/harness/notify.sh claude"},{"type":"command","command":"/bin/bash scripts/harness/notify.sh claudex"}]}]}}' > "$S11/other-name.json"
+expect "11: 正本のひな形の Claude Code の設定は、notify.sh claude を呼ぶと読める" calls_claude "$S11/claude.json"
+expect "11: 正本のひな形の Codex の設定は、notify.sh codex を呼ぶと読める（名前の直後が ;）" calls_codex "$S11/codex.json"
+expect "11: 正本のひな形の Codex の設定は、check-docs.sh の在りかを確かめると読める" checks_docs_path "$S11/codex.json"
+expect "11: 引用符の無い形でも、notify.sh claude を呼ぶと読める" calls_claude "$S11/claude-bare.json"
+expect "11: 引用符の無い形でも、notify.sh codex を呼ぶと読める" calls_codex "$S11/codex-bare.json"
+expect "11: PostToolUse の外の command では、notify.sh claude を呼ぶと読まない" not calls_claude "$S11/outside.json"
+expect "11: PostToolUse の外の文字列では、notify.sh codex を呼ぶと読まない" not calls_codex "$S11/outside.json"
+expect "11: PostToolUse の外の command では、check-docs.sh を確かめると読まない" not checks_docs_path "$S11/outside.json"
+expect "11: type が command でないものと、claudex のような別の名前は数えない" not calls_claude "$S11/other-name.json"
+
 if [ -f "$ROOT/.claude/settings.json" ]; then
   expect "11: .claude/settings.json が JSON として読める" json_ok "$ROOT/.claude/settings.json"
-  expect "11: .claude/settings.json が notify.sh claude を呼ぶ" grep -qF 'scripts/harness/notify.sh\" claude' "$ROOT/.claude/settings.json"
+  expect "11: .claude/settings.json が notify.sh claude を呼ぶ" calls_claude "$ROOT/.claude/settings.json"
 else
   echo "skip: 11: .claude/settings.json が無い"
 fi
 if [ -f "$ROOT/.codex/hooks.json" ]; then
   expect "11: .codex/hooks.json が JSON として読める" json_ok "$ROOT/.codex/hooks.json"
-  expect "11: .codex/hooks.json が notify.sh codex を呼ぶ" grep -qF 'notify.sh\" codex' "$ROOT/.codex/hooks.json"
-  expect "11: .codex/hooks.json が起動の前に check-docs.sh の在りかを確かめる" grep -qF 'check-docs.sh' "$ROOT/.codex/hooks.json"
+  expect "11: .codex/hooks.json が notify.sh codex を呼ぶ" calls_codex "$ROOT/.codex/hooks.json"
+  expect "11: .codex/hooks.json が起動の前に check-docs.sh の在りかを確かめる" checks_docs_path "$ROOT/.codex/hooks.json"
 else
   echo "skip: 11: .codex/hooks.json が無い"
 fi

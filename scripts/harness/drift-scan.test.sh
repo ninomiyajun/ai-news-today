@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # harness-copy: source=home/agents/skills/project-harness-init/assets/harness/drift-scan.test.sh
-# harness-copy: version=rules-2026.10.25-1
-# harness-copy: sha256=9c940961f50aed8ee4bebecad73ed960ac407c1ce176b2f61974584d78c19957
+# harness-copy: version=rules-2026.10.28-1
+# harness-copy: sha256=d97253af5a712b466f75b7fb1638be4ba4b4ec5d52ba9a5d8c955ff906628d96
 # harness-copy: この 4 行と本体は手で変えない。正本を直して project-harness-init の「導入済みのプロジェクトの更新」で置き換える
 # 定期の走査（drift-scan.sh）の試験。ハーネスの検査の本体の写しで、どのプロジェクトでも同じ中身を置く。
 #   bash scripts/harness/drift-scan.test.sh
@@ -100,6 +100,7 @@ rc_is() { [ "$RC" -eq "$1" ]; }
 report_has() { [ -f "$REPORT" ] && grep -qF -- "$1" "$REPORT"; }
 out_has() { grep -qF -- "$1" <<<"$OUT"; }
 no_report() { [ ! -e "$REPORT" ]; }
+not() { ! "$@"; }
 
 # 1. 通常の走査
 S="$TMP_ROOT/s1"
@@ -191,6 +192,78 @@ expect "6: default_branch が - で始まれば 2" rc_is 2
 no_copy_re() { ! grep -qF 'src|docs|scripts' "$H/drift-scan.sh"; }
 expect "7: drift-scan.sh に検査 7 の正規表現の写しが無い" no_copy_re
 expect "7: drift-scan.sh は --print arch-path-re を呼ぶ" grep -qF -- '--print arch-path-re' "$H/drift-scan.sh"
+
+# 8. 表の終わり（GFM と同じく、空行か別の塊の始まりで表が終わる。表の直後の縦線で始まらない行は表の続きなので誤り）
+TABLE_CONT="表の行が縦線で始まらない（表は空行で終える）"
+td_error() { grep -qF '| `3/表`' "$REPORT"; }
+qs_error() { grep -qF '| `4/表`' "$REPORT"; }
+no_td_error() { ! td_error; }
+# $1 = 見本の名前、$2 以降 = 技術的負債の一覧の表の直後に足す行
+td_after() {
+  S="$TMP_ROOT/$1"
+  shift
+  new_sample "$S"
+  printf '%s\n' "$@" >> "$S/docs/exec-plans/tech-debt-tracker.md"
+  run_scan "$S"
+}
+# $1 = 見本の名前、$2 以降 = 品質目標の「現在の評価」の表の直後に足す行
+qs_after() {
+  S="$TMP_ROOT/$1"
+  shift
+  new_sample "$S"
+  printf '%s\n' "$@" >> "$S/docs/QUALITY_SCORE.md"
+  run_scan "$S"
+}
+td_after s8a 'TD-2 | 2026-03-01 | `src/a.txt` | 見本 | 見本 |'
+expect "8: 縦線の無い TD-2 の行は、3/表 に理由を出す" report_has "8 行: $TABLE_CONT"
+expect "8: 縦線の無い行を、技術的負債の行として読まない" not report_has '`3/TD-2`'
+qs_after s8b "表の直後に空行を挟まない段落"
+expect "8: 品質目標の表の直後に空行なしの段落があれば、4/表 を要対応にする" qs_error
+expect "8: 品質目標の表の直後の段落の理由を出す" report_has "$TABLE_CONT"
+qs_after s8c "" "表の後に空行を挟んだ段落"
+expect "8: 表・空行・段落の順なら、4/表 は出ない" no_table_error
+td_after s8d "" "表の後に空行を挟んだ段落"
+expect "8: 表・空行・段落の順なら、3/表 は出ない" no_td_error
+td_after s8e "#hashtag の行"
+expect "8: #hashtag の行は見出しでないので、表の続きとして誤りにする" report_has "8 行: $TABLE_CONT"
+td_after s8f "<https://example.test>"
+expect "8: 自動リンクの行は HTML ブロックでないので、表の続きとして誤りにする" report_has "8 行: $TABLE_CONT"
+td_after s8g "### 補足" "見出しの後の段落"
+expect "8: 本物の見出しで表が終わる" no_td_error
+td_after s8h "<div>" "HTML ブロックの中" "</div>"
+expect "8: HTML ブロック（決まった名前のタグ）で表が終わる" no_td_error
+td_after s8i "<!-- 注釈 -->"
+expect "8: HTML ブロック（<!-- ）で表が終わる" no_td_error
+td_after s8j "- 箇条書き" "1. 順序付きの箇条書き"
+expect "8: 箇条書きで表が終わる" no_td_error
+td_after s8k "---" "区切り線の後の段落"
+expect "8: 区切り線で表が終わる" no_td_error
+td_after s8l '   | TD-2 | 2026-03-01 | `src/a.txt` | 見本 | 見本 |'
+expect "8: 行頭の空白が 3 個までの縦線の行は、表の行として読む" report_has '`3/TD-2`'
+expect "8: 行頭の空白が 3 個までの縦線の行では、誤りにしない" no_td_error
+# 情報文字列にバッククォートを含む ``` の行は囲みの開始ではなく、小文字の <!doctype は HTML の宣言ではない（表が続く）
+TD2_BARE='TD-2 | 2026-03-01 | `src/a.txt` | 見本 | 見本 |'
+td_after s8n '```bad`info' "$TD2_BARE"
+expect "8: 情報文字列にバッククォートを含む行の後も表が続き、3/表 に誤りが出る" report_has "9 行: $TABLE_CONT"
+td_after s8o '<!doctype html>' "$TD2_BARE"
+expect "8: 小文字の <!doctype の行の後も表が続き、3/表 に誤りが出る" report_has "9 行: $TABLE_CONT"
+qs_after s8p '```bad`info' "$TD2_BARE"
+expect "8: 品質目標でも、情報文字列にバッククォートを含む行の後に表が続き、4/表 に誤りが出る" report_has "17 行: $TABLE_CONT"
+qs_after s8q '<!doctype html>' "$TD2_BARE"
+expect "8: 品質目標でも、小文字の <!doctype の行の後に表が続き、4/表 に誤りが出る" report_has "17 行: $TABLE_CONT"
+td_after s8r '```info' "$TD2_BARE" '```'
+expect "8: 正しい囲み（\`\`\`info）で表が終わる" no_td_error
+td_after s8s '<!DOCTYPE html>' "$TD2_BARE"
+expect "8: HTML の宣言（<!DOCTYPE）で表が終わる" no_td_error
+qs_after s8t '~~~info`x' "$TD2_BARE" '~~~'
+expect "8: チルダの囲みは情報文字列にバッククォートがあっても表を終える" no_table_error
+S="$TMP_ROOT/s8m"
+new_sample "$S"
+# 「見直しの目安」の行を、目標の表の直後に空行を挟まずに置く
+awk '/^見直しの目安:/ { next } { print } /^\| 壊れない/ { print "見直しの目安: 90 日" }' "$S/docs/QUALITY_SCORE.md" > "$S/q.tmp"
+mv "$S/q.tmp" "$S/docs/QUALITY_SCORE.md"
+run_scan "$S"
+expect "8: 表の直後に空行なしで続く「見直しの目安」の行は、表を終えずに誤りにする" report_has "8 行: $TABLE_CONT"
 
 echo "drift-scan.test: 合格 $passed 件、不合格 $failed 件"
 [ "$failed" -eq 0 ]
