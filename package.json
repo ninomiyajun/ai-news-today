@@ -27,7 +27,7 @@
   },
   "devDependencies": {
     "@secretlint/secretlint-rule-pattern": "^13.0.7",
-    "@secretlint/secretlint-rule-preset-recommend": "^13.0.7",
+    "@secretlint/secretlint-rule-preset-recommend": "^13.1.0",
     "@types/node": "^26.6.4",
     "@types/react": "^19",
     "@types/react-dom": "^19",
