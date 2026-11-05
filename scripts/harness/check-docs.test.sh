@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # harness-copy: source=home/agents/skills/project-harness-init/assets/harness/check-docs.test.sh
-# harness-copy: version=rules-2026.10.28-1
+# harness-copy: version=rules-2026.11.05-1
 # harness-copy: sha256=73720a8ea266e1866d46397611b1ab98088a68b96f929f51890f4e188c23a342
 # harness-copy: この 4 行と本体は手で変えない。正本を直して project-harness-init の「導入済みのプロジェクトの更新」で置き換える
 # check-docs.sh の試験（検査 8〜13、設定のファイル、追加の検査の口）。ハーネスの検査の本体の写しで、どのプロジェクトでも
