@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // harness-copy: source=home/agents/skills/project-harness-init/assets/parts/node-secrets/assets/check-secrets.mjs
-// harness-copy: version=rules-2026.10.28-1
-// harness-copy: sha256=85805886a640435a373a0d96041ddb32aa9b94e4cbe779cfc7d90ea5adba78f9
+// harness-copy: version=rules-2026.11.05-1
+// harness-copy: sha256=d9e553d8e8f129c853c333e65bd4dae912539cd613a70edbb13c93bf014e4d71
 // harness-copy: この 4 行と本体は手で変えない。正本を直して project-harness-init の「導入済みのプロジェクトの更新」で置き換える
 // 秘匿値の検査の本体。入口は scripts/harness/check-secrets.sh（作業ツリーは引数なし、push する範囲は --commits）。
 // CI はこのファイルを node で直接呼ぶ（npm の pre と post のスクリプトを動かさないため）。
@@ -24,8 +24,10 @@
 //   - secretlint の除外のファイル（名前が .secretlintignore で始まるもの）と、secretlint の無効化のコメント
 //   - 秘匿値が見つかったファイル、コミットメッセージ、タグの注釈
 //   - NUL バイトか secretlint の無効化のコメントを含むコミットメッセージとタグの注釈
-// secretlint が既定で対象外にするファイル（.secretlintrc.* など）と、文字のファイルでないファイルは、
-// この中の単純な内容検査（SIMPLE_PATTERNS）で調べる。既知のバイナリの拡張子のファイルは、UTF-16LE と UTF-16BE で
+//   - 作業ツリーと --file の検査で、secretlint の既定の対象外の名前のファイルの写しが、secretlint の結果に出なかったとき
+// secretlint が既定で対象外にするファイル（.secretlintrc.* など）は、この中の単純な内容検査（SIMPLE_PATTERNS）で調べ、
+// 加えて、リポジトリの外の一時ディレクトリへ写した中身を secretlint にも掛ける（cwd の外では既定の対象外が効かないため）。
+// 文字のファイルでないファイルも、単純な内容検査で調べる。既知のバイナリの拡張子のファイルは、UTF-16LE と UTF-16BE で
 // 読んだ中身も同じ検査に掛ける。コミットメッセージとタグの注釈は、secretlint と単純な内容検査の両方に掛ける。
 // 失敗の一覧には、どのコミットかタグかの札だけを出し、見つかった値は出さない（値を伏せた表示は secretlint に任せる）。
 import { spawnSync } from "node:child_process";
@@ -109,7 +111,9 @@ const catBatch = async (shas, onObject) => {
   }
 };
 
-const problems = { unreadable: [], symlinks: [], nulFiles: [], nulTexts: [], ignoreFiles: [], disableComments: [], disableTexts: [] };
+const problems = {
+  unreadable: [], symlinks: [], nulFiles: [], nulTexts: [], ignoreFiles: [], disableComments: [], disableTexts: [], unscannedCopies: [],
+};
 
 // 中身に NUL バイトを含んでよい、既知のバイナリの拡張子（今のリポジトリにあるものと、よくある画像とフォント）。
 // これ以外の拡張子で NUL バイトを含むファイルは、UTF-16 の文字のファイルなどの読めないファイルとして失敗にする。
@@ -298,22 +302,42 @@ const main = async () => {
     }
 
     // secretlint の除外を、ファイルを足すだけで働かせないための検査と、NUL バイトを含むファイルの検査
+    //
+    // secretlint の既定の対象外は、cwd（リポジトリ）からの相対の glob で効き、cwd の外のパスには効かない
+    // （@secretlint/walker の ignore-stack.js:79-86 が、対象のパスを含まないディレクトリの段の照合を飛ばす。secretlint 13.0.7 で確認）。
+    // コミットの中身はリポジトリの外の一時ディレクトリに取り出すので、そのまま secretlint に掛かる。作業ツリーと --file の検査では、
+    // 既定の対象外の名前のファイルを、単純な内容検査で調べるのに加え、ここで読んだ中身をそのまま一時ディレクトリの
+    // excluded/<通し番号>/<rel> へ写し、写しを secretlint に渡す（通し番号は、大文字と小文字を区別しない一時領域で、
+    // 大文字と小文字だけが違うパスの写しが重なって中身を上書きしないため）。写しの要素は { abs: 写しのパス, rel, label: 元の札, src: 元の要素 }。
+    // 限界: 規則の中には、ファイルのパスで適用を決めるもの（pattern の規則の filePathGlobs）がある。写しのパスは一時ディレクトリの
+    // 下の excluded/<通し番号>/<rel> なので、パスで適用を決める条件は全般に、元のパスと違う結果になりうる（元の絶対パスに頼る
+    // 条件だけでなく、否定の glob も。たとえば ["**/.secretlintrc.json", "!**/excluded/**"] は、元のパスでは当たり、写しのパスでは
+    // 外れる）。コミットの検査も同じ性質を持つ。配るひな形の .secretlintrc.json は filePathGlobs を使っていない。
     const readable = [];
+    const forSimple = []; // secretlint の既定の対象外の元のファイル（単純な内容検査で調べる）
+    const forSecretlint = [];
     for (const e of entries) {
       if (!e.isText && (path.basename(e.rel).startsWith(".secretlintignore") || path.basename(e.rel) === UNUSED_IGNORE_NAME)) {
         problems.ignoreFiles.push(e.label);
       }
       const buf = fs.readFileSync(e.abs);
       if (buf.includes(DISABLE_MARK)) (e.isText ? problems.disableTexts : problems.disableComments).push(e.label);
-      if (buf.includes(0) && !isKnownBinary(e.rel)) (e.isText ? problems.nulTexts : problems.nulFiles).push(e.label);
-      else readable.push(e);
+      if (buf.includes(0) && !isKnownBinary(e.rel)) {
+        (e.isText ? problems.nulTexts : problems.nulFiles).push(e.label);
+        continue;
+      }
+      readable.push(e);
+      if (!commitMode && isSecretlintDefaultExcluded(e.rel)) {
+        forSimple.push(e);
+        const abs = path.join(tmp, "excluded", String(forSimple.length), e.rel);
+        fs.mkdirSync(path.dirname(abs), { recursive: true });
+        fs.writeFileSync(abs, buf);
+        forSecretlint.push({ abs, rel: e.rel, label: e.label, src: e });
+      } else {
+        forSecretlint.push(e);
+      }
     }
-
-    // コミットの中身はリポジトリの外の一時ディレクトリに置くので、secretlint の既定の除外が掛からない
-    const routeToSimple = (e) => !commitMode && isSecretlintDefaultExcluded(e.rel);
-    const forSimple = readable.filter(routeToSimple);
-    const forSecretlint = readable.filter((e) => !routeToSimple(e));
-    const excludedCount = forSimple.length; // secretlint の既定の対象外で、単純な内容検査だけで調べるファイル
+    const excludedCount = forSimple.length; // secretlint の既定の対象外で、写しを secretlint にも掛けたファイル
     const simpleSet = new Set(forSimple);
     const byAbs = new Map(forSecretlint.map((e) => [e.abs, e]));
     const findings = [];
@@ -339,18 +363,23 @@ const main = async () => {
         seenAbs.add(e.abs);
         if (res.messages.length > 0) withFindings.push(e);
         checkedBySecretlint += 1;
-        if (res.sourceContentType === "binary" && !simpleSet.has(e)) {
-          simpleSet.add(e);
-          forSimple.push(e); // secretlint の規則の多くは文字のファイルだけを調べるため
+        // 単純な内容検査に足すのは元の要素（写しの元がすでに入っていれば足さず、同じ札の所見を 2 回出さない）
+        const orig = e.src ?? e;
+        if (res.sourceContentType === "binary" && !simpleSet.has(orig)) {
+          simpleSet.add(orig);
+          forSimple.push(orig); // secretlint の規則の多くは文字のファイルだけを調べるため
         }
       }
     }
-    for (const e of forSecretlint) if (!seenAbs.has(e.abs)) problems.unreadable.push(e.label);
+    for (const e of forSecretlint) {
+      if (!seenAbs.has(e.abs)) (e.src ? problems.unscannedCopies : problems.unreadable).push(e.label);
+    }
     // 既知のバイナリの拡張子のファイルは、secretlint が文字のファイルと見なしても単純な内容検査に掛ける（UTF-16 の中身のため）
     for (const e of forSecretlint) {
-      if (isKnownBinary(e.rel) && !simpleSet.has(e)) {
-        simpleSet.add(e);
-        forSimple.push(e);
+      const orig = e.src ?? e;
+      if (isKnownBinary(orig.rel) && !simpleSet.has(orig)) {
+        simpleSet.add(orig);
+        forSimple.push(orig);
       }
     }
     // --file のファイルと、コミットメッセージとタグの注釈には、単純な内容検査も必ず掛ける（--file は公開する前の最後の
@@ -362,9 +391,10 @@ const main = async () => {
       }
     }
     // 見つかった値を伏せた形で表示する（secretlint の既定の maskSecrets）。コミットの検査では、表示に出る一時ファイルの
-    // パスが、どのコミットのファイルか、どのコミットメッセージかタグの注釈かを先に出す
-    if (commitMode) {
-      for (const e of withFindings) console.error(`check-secrets: 次の表示の ${e.abs} は ${e.label}`);
+    // パスが、どのコミットのファイルか、どのコミットメッセージかタグの注釈かを先に出す。作業ツリーと --file の検査でも、
+    // 写しを表示に渡すファイルは、写しのパスがどのファイルかを先に出す
+    for (const e of withFindings) {
+      if (commitMode || e.src) console.error(`check-secrets: 次の表示の ${e.abs} は ${e.label}`);
     }
     for (const files of chunkFiles(withFindings.map((e) => e.abs))) {
       spawnSync(SECRETLINT, [...common, "--", ...files], { cwd: ROOT, stdio: "inherit" });
@@ -376,7 +406,8 @@ const main = async () => {
 
     const summary =
       `secretlint で ${checkedBySecretlint} 件、単純な内容検査で ${forSimple.length} 件` +
-      `（うち secretlint の既定の対象外 ${excludedCount} 件、secretlint でも調べた ${forSimple.length - excludedCount} 件）` +
+      `（うち secretlint の既定の対象外で、写しを secretlint にも掛けた ${excludedCount} 件、` +
+      `ほかに secretlint でも調べた ${forSimple.length - excludedCount} 件）` +
       `を調べました${note ? `。${note}` : ""}`;
     console.log(`check-secrets: ${commitMode ? "コミットの中身" : fileMode ? "ファイル" : "作業ツリー"}: ${summary}`);
 
@@ -389,6 +420,11 @@ const main = async () => {
       console.error(`  直し方: ${fix}`);
     };
     report(problems.unreadable, "一覧にあるのに検査できなかったファイル", "ファイルの種類と読み取りの権限を確かめる。サブモジュールは使わない");
+    report(
+      problems.unscannedCopies,
+      "secretlint が既定の対象外として調べなかった写し",
+      "secretlint の版が既定の対象外の扱いを変えた可能性がある。check-secrets.mjs の写しの方式を見直す（TMPDIR がリポジトリの中にあるときも起きる）",
+    );
     report(problems.symlinks, "シンボリックリンク", "シンボリックリンクをやめ、実体のファイルを置く（リンク先の中身は検査と食い違うため）");
     report(
       problems.nulFiles,

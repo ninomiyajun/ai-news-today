@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # harness-copy: source=home/agents/skills/project-harness-init/assets/harness/notify.test.sh
-# harness-copy: version=rules-2026.10.28-1
+# harness-copy: version=rules-2026.11.05-1
 # harness-copy: sha256=375114e5d4ffbfc75dce8f6243af9936ba797cbddab83f53454186f3e9f539d5
 # harness-copy: この 4 行と本体は手で変えない。正本を直して project-harness-init の「導入済みのプロジェクトの更新」で置き換える
 # 早期通知（notify.sh）と、check-docs.sh の --root、フックの設定（.claude/settings.json、.codex/hooks.json）の試験。
