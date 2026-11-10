@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # harness-copy: source=home/agents/skills/project-harness-init/assets/harness/check-docs.test.sh
-# harness-copy: version=rules-2026.11.05-1
-# harness-copy: sha256=73720a8ea266e1866d46397611b1ab98088a68b96f929f51890f4e188c23a342
+# harness-copy: version=rules-2026.11.10-1
+# harness-copy: sha256=4fb84b424c8e7664145c41f53d907b3a7dc825a736b2a92b7b7101f934bc24e6
 # harness-copy: この 4 行と本体は手で変えない。正本を直して project-harness-init の「導入済みのプロジェクトの更新」で置き換える
 # check-docs.sh の試験（検査 8〜13、設定のファイル、追加の検査の口）。ハーネスの検査の本体の写しで、どのプロジェクトでも
 # 同じ中身を置く。手元で使うコマンドは下の TEST_COMMAND（CI はこのスクリプトを bash で直接呼ぶ）。最後に、このファイルの
@@ -82,8 +82,10 @@ add_spec_dir() {
   fi
 }
 
-# 検査 1〜7 を通る最小のリポジトリを作る。必須のファイルは、決まった中身が要るものを除いて空のファイルにする
-make_base() {
+# 検査 1〜7 を通る最小のリポジトリを作る。必須のファイルは、決まった中身が要るものを除いて空のファイルにする。
+# 中身は試験の間に変わらない値（REQUIRED、PLANS、CHECK、CONF、SPEC_REQUIRED など）だけで決まるので、最初の 1 回だけ
+# 作って git init したひな形（BASE_TEMPLATE）を、場合ごとに cp -R で写す（場合ごとに作り直して git init すると遅いため）
+build_base() {
   local d="$1" p
   mkdir -p "$d/docs/exec-plans/active" "$d/docs/exec-plans/completed"
   while IFS= read -r p; do
@@ -112,6 +114,16 @@ EOF
     : > "$d/docs/PRODUCT_SENSE.md"
   fi
   git -C "$d" init -q
+}
+BASE_TEMPLATE="$TMP_ROOT/base-template"
+build_base "$BASE_TEMPLATE"
+# ひな形を $1（まだ無いパス）に写す
+make_base() {
+  if [ -e "$1" ] || [ -L "$1" ]; then
+    echo "check-docs.test: NG: 見本の置き場 $1 が既にあります（ひな形を写す先は、まだ無いパスにする）" >&2
+    exit 1
+  fi
+  cp -R "$BASE_TEMPLATE" "$1"
 }
 
 # 書式の文書（$1）の「## 必須の節」から、必須の見出しを 1 行ずつ出す
