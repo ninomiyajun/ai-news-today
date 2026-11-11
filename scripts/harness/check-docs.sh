@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # harness-copy: source=home/agents/skills/project-harness-init/assets/harness/check-docs.sh
-# harness-copy: version=rules-2026.11.05-1
-# harness-copy: sha256=16421b6204059c9c60cac1265b31e8991ff3dc863ac07a1ea8dc57f3c46ac8d7
+# harness-copy: version=rules-2026.11.10-1
+# harness-copy: sha256=9aba183473287daae62a0771d660bc3c7d7bc72f0f62e3f56b646190dd11c4a4
 # harness-copy: この 4 行と本体は手で変えない。正本を直して project-harness-init の「導入済みのプロジェクトの更新」で置き換える
 # 文書の検査（ハーネスの検査の本体）。どのプロジェクトでも同じ中身の写しを scripts/harness/check-docs.sh に置く。
 # プロジェクトごとの値は、同じ置き場の設定のファイル harness.conf と、プロジェクトの文書から読む。プロジェクト専用の
@@ -107,6 +107,10 @@
 # 失敗したときは、項目ごとに直し方を表示して、終了コード 1 で終わる。引数の誤りは終了コード 2。
 set -euo pipefail
 export LC_ALL=C
+# 繰り返し使う制御文字（コマンド置換で作ると、使うたびにプロセスを起動するため）
+CR=$'\r'
+TAB=$'\t'
+NL=$'\n'
 
 usage_error() {
   echo "check-docs: NG: $1" >&2
@@ -160,7 +164,7 @@ conf_errors="$work_dir/conf-errors"
 : > "$conf_errors"
 if [ -L "$CONF" ] || [ ! -f "$CONF" ]; then
   echo "設定のファイル scripts/harness/harness.conf がありません（シンボリックリンクも受け付けません）" >> "$conf_errors"
-elif grep -q "$(printf '\r')" "$CONF"; then
+elif grep -q "$CR" "$CONF"; then
   echo "設定のファイルに CR（\\r）が含まれています（改行を LF にする）" >> "$conf_errors"
 else
   awk -v single="$CONF_SINGLE_KEYS" -v multi="$CONF_MULTI_KEYS" -v errf="$conf_errors" '
@@ -186,8 +190,9 @@ fi
 
 conf_get() { # <キー> [既定]: 1 回だけ書けるキーの値（無ければ既定）
   local v
-  v="$(awk -F '\t' -v k="$1" '$1 == k { sub(/^[^\t]*\t/, ""); print; exit }' "$conf_tsv")"
-  if awk -F '\t' -v k="$1" '$1 == k { f = 1 } END { exit !f }' "$conf_tsv"; then printf '%s\n' "$v"; else printf '%s\n' "${2:-}"; fi
+  # キーがあれば「=」に値を続けた 1 行を出す（値が空でも、キーの有無を 1 回の awk で分けるため）
+  v="$(awk -F '\t' -v k="$1" '$1 == k { sub(/^[^\t]*\t/, ""); print "=" $0; exit }' "$conf_tsv")"
+  if [ -n "$v" ]; then printf '%s\n' "${v#=}"; else printf '%s\n' "${2:-}"; fi
 }
 conf_all() { # <キー>: 何行でも書けるキーの値を 1 行に 1 つ
   awk -F '\t' -v k="$1" '$1 == k { sub(/^[^\t]*\t/, ""); print }' "$conf_tsv"
@@ -214,7 +219,7 @@ $(conf_all part)
 EOF
   DEFAULT_BRANCH="$(conf_get default_branch main)"
   [[ "$DEFAULT_BRANCH" =~ ^[A-Za-z0-9._/-]+$ ]] && [[ "$DEFAULT_BRANCH" != -* ]] || conf_bad "default_branch の値「${DEFAULT_BRANCH}」に使えない文字があります"
-  while IFS="$(printf '\t')" read -r k v; do
+  while IFS="$TAB" read -r k v; do
     case "$k" in
       required.*)
         case "$v" in
@@ -357,9 +362,9 @@ if [ -n "$version" ]; then
       [ -z "$path" ] && continue
       case "$path" in
         */) [ -d "$path" ] || fail "必須のディレクトリ $path がありません（ハーネスの版 ${version}）" \
-              "$path を作る（空なら .gitkeep を置く）。不要になったのなら、版を上げて scripts/harness/harness.conf の required.<版> の行を直す" ;;
+              "$path を作る（空なら .gitkeep を置く）。不要になったのなら、scripts/harness/harness.conf の required.<版> の行を「# 外した: <パス>（<理由>）」の注釈の行にする（検査の本体の写しは外せない）" ;;
         *) [ -f "$path" ] || fail "必須のファイル $path がありません（ハーネスの版 ${version}）" \
-              "$path を戻す。不要になったのなら、版を上げて scripts/harness/harness.conf の required.<版> の行を直す" ;;
+              "$path を戻す。不要になったのなら、scripts/harness/harness.conf の required.<版> の行を「# 外した: <パス>（<理由>）」の注釈の行にする（検査の本体の写しは外せない）" ;;
       esac
     done <<EOF
 $required
@@ -417,8 +422,17 @@ while IFS= read -r -d '' md; do
     fail "$md を grep で読めません（終了コード ${rc}）" "$md の読み取りの権限と中身を確かめる"
     continue
   fi
-  dir="$(dirname -- "$md")"
+  # $(dirname -- "$md") と同じ値をシェルの置き換えで求める（git の一覧のパスは / で終わらず、空でもないため）。ファイルごとに
+  # 外のコマンドを起動しないため。コマンド置換は末尾の改行を除くので、ディレクトリの名前が改行で終わるときは同じく除く
+  case "$md" in
+    */*) dir="${md%/*}" ;;
+    *) dir="." ;;
+  esac
+  while [ "${dir%"$NL"}" != "$dir" ]; do dir="${dir%"$NL"}"; done
+  # grep -o が出す各行は「](」で始まり「)」で終わる。その前後を、行ごとにシェルの置き換えで外す
   while IFS= read -r target; do
+    target="${target#\](}"
+    target="${target%)}"
     [ -z "$target" ] && continue
     case "$target" in
       http://*|https://*|mailto:*|\#*) continue ;;
@@ -427,7 +441,7 @@ while IFS= read -r -d '' md; do
     [ -z "$path" ] && continue
     [ -e "$dir/$path" ] || fail "$md のリンク先 $target がありません" "$md のリンクを実在するパスに直す"
   done <<EOF
-$(printf '%s\n' "$links" | sed -e 's/^](//' -e 's/)$//')
+$links
 EOF
 done < "$md_list"
 
@@ -475,30 +489,36 @@ required_headings_of() {
 }
 
 # $1 のファイルに、$2（1 行に 1 つの見出し）のうち行として無い見出しを 1 行ずつ出す。コードブロックの中の行は数えない
+# 見出しごとに grep を起動せず、1 回の awk で、行として完全に一致するかを見出しの順に調べる。見出しはファイル（プロセス
+# 置換）として渡す（-v は値の中の \ を解釈し、環境変数は大きいと awk を起動できなくなるため）。1 つ目のファイルかどうかは
+# FILENAME で分ける（見出しが 0 行のとき、FNR == NR では本文を見出しと取り違えるため）
 missing_headings_in() {
-  local body heading
-  body="$(outside_code_blocks "$1")"
-  while IFS= read -r heading; do
-    [ -z "$heading" ] && continue
-    grep -qxF -- "$heading" <<<"$body" || printf '%s\n' "$heading"
-  done <<EOF
-$2
-EOF
+  outside_code_blocks "$1" | awk '
+    FILENAME == ARGV[1] { h[++n] = $0; next }
+    { present[$0] = 1 }
+    END { for (i = 1; i <= n; i++) if (h[i] != "" && !(h[i] in present)) print h[i] }' <(printf '%s\n' "$2") -
 }
 
 # 計画 $1 が新しい書式の計画か（ファイル名の日付が「新しい書式の適用開始」以降か、日付で始まらない名前）。
 # 適用開始の日付（format_start）を読めていないときは、どの計画も新しい書式とみなさない
 is_new_format_plan() {
-  local name date
+  local name date=""
   [ -n "${format_start:-}" ] || return 1
-  name="$(basename "$1" .md)"
-  date="$(printf '%s\n' "$name" | sed -n 's/^\([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\)-.*$/\1/p')"
+  # basename "$1" .md と、名前の先頭の「YYYY-MM-DD-」の日付を、外のコマンドを起動せずに求める（計画ごとに呼ぶため）
+  name="${1##*/}"
+  [ "$name" = .md ] || name="${name%.md}"
+  case "$name" in
+    *"$NL"*) # 改行を含む名前は、行ごとに読む sed のままにする（行ごとの一致を同じにするため）
+      date="$(printf '%s\n' "$name" | sed -n 's/^\([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\)-.*$/\1/p')" ;;
+    *) if [[ "$name" =~ $PLAN_DATE_PREFIX_RE ]]; then date="${BASH_REMATCH[1]}"; fi ;;
+  esac
   if [ -n "$date" ] && [[ "$date" < "$format_start" ]]; then
     return 1
   fi
   return 0
 }
 
+PLAN_DATE_PREFIX_RE='^([0-9]{4}-[0-9]{2}-[0-9]{2})-'
 format_start=""
 if [ -f docs/PLANS.md ]; then
   format_start="$(sed -n 's/^新しい書式の適用開始: \([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\)$/\1/p' docs/PLANS.md | head -n 1)"
@@ -520,7 +540,7 @@ if [ -f docs/PLANS.md ]; then
           "$plan を、実体のファイルとして置く"
         continue
       fi
-      if grep -q "$(printf '\r')" "$plan"; then
+      if grep -q "$CR" "$plan"; then
         fail "計画 $plan に CR（\\r）が含まれています" "改行を LF にしてください（CR があると見出しの行が一致しないため）"
         continue
       fi
@@ -727,7 +747,7 @@ for rec in docs/exec-plans/active/*.acceptance.md docs/exec-plans/completed/*.ac
       "$rec を、実体のファイルとして置く"
     continue
   fi
-  if grep -q "$(printf '\r')" "$rec"; then
+  if grep -q "$CR" "$rec"; then
     fail "受け入れ確認の記録 $rec に CR（\\r）が含まれています" "改行を LF にしてください（CR があると行を読み取れないため）"
     continue
   fi
@@ -758,7 +778,7 @@ if [ -n "$format_start" ]; then
     case "$plan" in *.acceptance.md) continue ;; esac
     # 読めない計画と CR を含む計画は、検査 8 が失敗にしている
     { [ -f "$plan" ] && [ ! -L "$plan" ]; } || continue
-    grep -q "$(printf '\r')" "$plan" && continue
+    grep -q "$CR" "$plan" && continue
     plan_name="$(basename "$plan" .md)"
     is_new_format_plan "$plan" || continue
     verification="$(check_plan_verification "$plan")"
@@ -772,7 +792,7 @@ EOF
     criteria="$(printf '%s\n' "$verification" | sed -n 's/^ACC	//p' | sort -u)"
     rec="docs/exec-plans/completed/$plan_name.acceptance.md"
     # 記録があれば、受け入れ確認の基準の有無によらず書式を調べる
-    if [ -f "$rec" ] && [ ! -L "$rec" ] && ! grep -q "$(printf '\r')" "$rec"; then
+    if [ -f "$rec" ] && [ ! -L "$rec" ] && ! grep -q "$CR" "$rec"; then
       while IFS= read -r problem; do
         [ -z "$problem" ] && continue
         fail "受け入れ確認の記録 $rec: $problem" \
@@ -918,7 +938,7 @@ if [ -e "$SPEC_DIR" ] || [ -L "$SPEC_DIR" ]; then
 
     # (1)(2)(3) 目録の行
     catalog_header=""
-    while IFS="$(printf '\t')" read -r kind abbr target status ncol; do
+    while IFS="$TAB" read -r kind abbr target status ncol; do
       [ -z "$kind" ] && continue
       if [ "$kind" = HEAD ]; then
         catalog_header="$abbr"
@@ -984,7 +1004,7 @@ EOF
         fail "仕様 $spec を検査できません（シンボリックリンクか、通常のファイルではありません）" "$spec を、実体のファイルとして置く"
         continue
       fi
-      if grep -q "$(printf '\r')" "$spec"; then
+      if grep -q "$CR" "$spec"; then
         fail "仕様 $spec に CR（\\r）が含まれています" "改行を LF にしてください（CR があると見出しの行が一致しないため）"
         continue
       fi
@@ -1070,7 +1090,7 @@ for plan in docs/exec-plans/active/*.md docs/exec-plans/completed/*.md; do
   case "$plan" in *.acceptance.md) continue ;; esac
   # 読めない計画と CR を含む計画は、検査 8 が失敗にしている
   { [ -f "$plan" ] && [ ! -L "$plan" ]; } || continue
-  grep -q "$(printf '\r')" "$plan" && continue
+  grep -q "$CR" "$plan" && continue
   is_new_format_plan "$plan" || continue
   # 仕様の名前は英小文字・数字・ハイフン（docs/product-specs/README.md の「置き場と名前」）なので、その文字だけを拾う。
   # 読点などでつないだ 2 つのパスが 1 つにつながらないようにするため
@@ -1204,7 +1224,7 @@ elif [ -n "$STALE_PLAN_DAYS" ]; then
     case "$plan" in *.acceptance.md) continue ;; esac
     # 読めない計画と CR を含む計画は、検査 8 が失敗にしている
     { [ -f "$plan" ] && [ ! -L "$plan" ]; } || continue
-    grep -q "$(printf '\r')" "$plan" && continue
+    grep -q "$CR" "$plan" && continue
     latest="$(latest_plan_date "$plan" "$base_day")"
     if [ -z "$latest" ]; then
       fail "進行中の計画 $plan の古さを判定できません（ファイル名の先頭にも「## 進捗」の節にも、数えられる YYYY-MM-DD の形の日付がありません。暦に無い日付と、基準の日 $base_day の 1 日後より後の日付は数えない）" \
@@ -1414,7 +1434,7 @@ while IFS= read -r -d '' f; do
   case "$f" in *.md) md_files[${#md_files[@]}]="$f" ;; esac
 done < "$work_dir/all-files.z"
 copy_problems="$( { perl -e "$COPY_PL" files < "$work_dir/all-files.z"; [ "${#md_files[@]}" -eq 0 ] || perl -e "$COPY_PL" regions "${md_files[@]}"; } )"
-while IFS="$(printf '\t')" read -r what why; do
+while IFS="$TAB" read -r what why; do
   [ -n "$what" ] || continue
   fail "写し $what の中身が合いません（${why}）" \
     "写しは手で直さない。規約の正本を直して、project-harness-init の「導入済みのプロジェクトの更新」で置き換えるか、git で元に戻す。プロジェクト専用の検査は scripts/harness/checks.d/ に置く"

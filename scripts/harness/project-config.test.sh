@@ -140,9 +140,9 @@ $out"
 
 # --- フックの設定（.claude/settings.json と .codex/hooks.json） ---
 
-# 規約のひな形 rules-2026.10.25-1 の assets/codex-hooks.json の中身を、そのまま写して持つ（CI では規約のリポジトリを読めないので、
-# 実行のときに読まない）。.codex/hooks.json の各フックの command は、この中の command と一字一句同じであることを求める。
-# .claude/settings.json の command は、下の期待値（同じ版の assets/claude-settings.json の command）と全文で照らす。
+# 規約のひな形 rules-2026.11.10-1 の assets/codex-hooks.json と assets/claude-settings.json の中身を、そのまま写して持つ（CI では
+# 規約のリポジトリを読めないので、実行のときに読まない）。.codex/hooks.json の各フックの command は、codex-hooks.json の中の command と
+# 一字一句同じであることを求める。.claude/settings.json の hooks は、claude-settings.json の hooks と全体で照らす。
 # ひな形が変わって取り込んだら、同じ変更でここも写し直す（docs/adr/0007-harness-engine-copies.md の「更新のたびに行うこと」）
 cat > "$TMP_ROOT/codex-hooks.template.json" <<'CODEX_HOOKS_TEMPLATE'
 {
@@ -153,7 +153,7 @@ cat > "$TMP_ROOT/codex-hooks.template.json" <<'CODEX_HOOKS_TEMPLATE'
         "hooks": [
           {
             "type": "command",
-            "command": "root=$(git -c core.fsmonitor=false worktree list --porcelain | sed -n '1s/^worktree //p'); h=scripts/harness; harness_notify_git() { git --no-pager -C \"$root\" -c core.fsmonitor=false \"$@\"; }; test -n \"$root\" && test \"$(harness_notify_git rev-parse --is-bare-repository)\" = false && harness_notify_git cat-file -e \"HEAD:$h/notify.sh\" && harness_notify_git cat-file -e \"HEAD:$h/check-docs.sh\" && harness_notify_git diff --no-ext-diff --no-textconv --quiet HEAD -- \"$h\" && test -z \"$(harness_notify_git ls-files --others --exclude-standard -- \"$h\")\" && test -f \"$root/$h/notify.sh\" && exec /bin/bash \"$root/$h/notify.sh\" codex; printf '%s\\n' '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"早期通知は動きませんでした（起動の前の確かめが成り立ちません）。作業は止めていません。\"}}'",
+            "command": "/usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin ${HOME+\"HOME=$HOME\"} ${TMPDIR+\"TMPDIR=$TMPDIR\"} ${LANG+\"LANG=$LANG\"} ${HARNESS_NOTIFY+\"HARNESS_NOTIFY=$HARNESS_NOTIFY\"} ${HARNESS_NOTIFY_LOG+\"HARNESS_NOTIFY_LOG=$HARNESS_NOTIFY_LOG\"} ${CLAUDE_PROJECT_DIR+\"CLAUDE_PROJECT_DIR=$CLAUDE_PROJECT_DIR\"} GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /bin/bash -c '[ \"${HARNESS_NOTIFY:-}\" = off ] && exit 0; t0=$(date +%s); f() { printf \"%s\\n\" \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"PostToolUse\\\",\\\"additionalContext\\\":\\\"早期通知は動きませんでした（起動の前の確かめが成り立ちません: $1）。作業は止めていません。\\\"}}\"; exit 0; }; g() { git --no-pager -c core.fsmonitor=false \"$@\" < /dev/null 2> /dev/null; }; r=$(g worktree list --porcelain | sed -n \"1s/^worktree //p\"); [ -n \"$r\" ] || f \"根を決められない\"; [ $(( $(date +%s) - t0 )) -lt 17 ] || f \"時間切れ\"; t=$(g -C \"$r\" ls-tree HEAD -- scripts/harness/notify-launch.sh); case \"$t\" in \"100644 blob \"*|\"100755 blob \"*) ;; *) f \"HEAD の scripts/harness/notify-launch.sh が無いか、通常のファイルでない\" ;; esac; o=${t#* blob }; o=${o%%[[:space:]]*}; s=$(g -C \"$r\" cat-file blob \"$o\"); [ -n \"$s\" ] || f \"HEAD から scripts/harness/notify-launch.sh を取り出せない\"; exec /bin/bash -c \"$s\" notify-launch \"$1\" \"$r\" \"$t0\"' notify-launch-hook codex",
             "timeout": 20
           }
         ]
@@ -162,6 +162,24 @@ cat > "$TMP_ROOT/codex-hooks.template.json" <<'CODEX_HOOKS_TEMPLATE'
   }
 }
 CODEX_HOOKS_TEMPLATE
+cat > "$TMP_ROOT/claude-settings.template.json" <<'CLAUDE_SETTINGS_TEMPLATE'
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin ${HOME+\"HOME=$HOME\"} ${TMPDIR+\"TMPDIR=$TMPDIR\"} ${LANG+\"LANG=$LANG\"} ${HARNESS_NOTIFY+\"HARNESS_NOTIFY=$HARNESS_NOTIFY\"} ${HARNESS_NOTIFY_LOG+\"HARNESS_NOTIFY_LOG=$HARNESS_NOTIFY_LOG\"} ${CLAUDE_PROJECT_DIR+\"CLAUDE_PROJECT_DIR=$CLAUDE_PROJECT_DIR\"} GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /bin/bash -c '[ \"${HARNESS_NOTIFY:-}\" = off ] && exit 0; t0=$(date +%s); f() { printf \"%s\\n\" \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"PostToolUse\\\",\\\"additionalContext\\\":\\\"早期通知は動きませんでした（起動の前の確かめが成り立ちません: $1）。作業は止めていません。\\\"}}\"; exit 0; }; g() { git --no-pager -c core.fsmonitor=false \"$@\" < /dev/null 2> /dev/null; }; r=$(g -C \"$CLAUDE_PROJECT_DIR\" rev-parse --show-toplevel); [ -n \"$r\" ] || f \"根を決められない\"; [ $(( $(date +%s) - t0 )) -lt 17 ] || f \"時間切れ\"; t=$(g -C \"$r\" ls-tree HEAD -- scripts/harness/notify-launch.sh); case \"$t\" in \"100644 blob \"*|\"100755 blob \"*) ;; *) f \"HEAD の scripts/harness/notify-launch.sh が無いか、通常のファイルでない\" ;; esac; o=${t#* blob }; o=${o%%[[:space:]]*}; s=$(g -C \"$r\" cat-file blob \"$o\"); [ -n \"$s\" ] || f \"HEAD から scripts/harness/notify-launch.sh を取り出せない\"; exec /bin/bash -c \"$s\" notify-launch \"$1\" \"$r\" \"$t0\"' notify-launch-hook claude",
+            "timeout": 20
+          }
+        ]
+      }
+    ]
+  }
+}
+CLAUDE_SETTINGS_TEMPLATE
 
 settings_problems="$(node -e '
   const fs = require("node:fs");
@@ -171,9 +189,9 @@ settings_problems="$(node -e '
   const problems = [];
   if (!same(Object.keys(s).sort(), ["hooks", "permissions"])) problems.push("settings.json の最上位は permissions と hooks だけにする");
   if (!same(s.permissions, { deny: ["Read(.env*)", "Read(!.env.example)"] })) problems.push("permissions は、決めた 2 つの拒否の規則だけにする");
-  if (!same(s.hooks, { PostToolUse: [{ matcher: "Edit|Write", hooks: [{ type: "command",
-    command: "/bin/bash \"$CLAUDE_PROJECT_DIR/scripts/harness/notify.sh\" claude", timeout: 20 }] }] })) {
-    problems.push("settings.json の hooks が、決めた形と違う");
+  const ct = JSON.parse(fs.readFileSync(process.argv[4], "utf8"));
+  if (!same(s.hooks, ct.hooks)) {
+    problems.push("settings.json の hooks が、規約のひな形（rules-2026.11.10-1 の assets/claude-settings.json）の hooks と同じでない");
   }
   const group = c.hooks && c.hooks.PostToolUse && c.hooks.PostToolUse[0];
   const hook = group && group.hooks && group.hooks[0];
@@ -183,11 +201,11 @@ settings_problems="$(node -e '
   }
   const t = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
   const commands = (x) => ((x.hooks && x.hooks.PostToolUse) || []).flatMap((g) => (g.hooks || []).map((h) => h.command));
-  if (!same(commands(c), commands(t))) problems.push("hooks.json の command が、規約のひな形（rules-2026.10.25-1 の assets/codex-hooks.json）の command と一字一句同じでない");
+  if (!same(commands(c), commands(t))) problems.push("hooks.json の command が、規約のひな形（rules-2026.11.10-1 の assets/codex-hooks.json）の command と一字一句同じでない");
   const text = fs.readFileSync(process.argv[1], "utf8") + fs.readFileSync(process.argv[2], "utf8");
   if (/\/Users\/|\/home\/|ANTHROPIC_|apiKeyHelper/.test(text)) problems.push("設定に、ホームの絶対パスか、置かないと決めた項目がある");
   console.log(problems.join("\n"));
-' "$ROOT/.claude/settings.json" "$ROOT/.codex/hooks.json" "$TMP_ROOT/codex-hooks.template.json" 2>&1 || echo "設定を JSON として読めません")"
+' "$ROOT/.claude/settings.json" "$ROOT/.codex/hooks.json" "$TMP_ROOT/codex-hooks.template.json" "$TMP_ROOT/claude-settings.template.json" 2>&1 || echo "設定を JSON として読めません")"
 record "設定: .claude/settings.json と .codex/hooks.json が、決めた形である" "$([ -z "$settings_problems" ] && echo 0 || echo 1)" "$settings_problems"
 record "設定: .codex/config.toml を置いていない" "$([ ! -e "$ROOT/.codex/config.toml" ] && echo 0 || echo 1)" ".codex/config.toml があります（docs/adr/0005-early-notify-hooks.md で、置かないと決めた）"
 
