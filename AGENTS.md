@@ -96,7 +96,7 @@ ai-news-today（GitHub）に置く。現在は土台だけで、記事の取得�
   書き方は ESLint では止められない。詳細は `ARCHITECTURE.md` の不変条件）。
 - 早期通知（フックが呼ぶ `scripts/harness/notify.sh`）は、Edit・Write と `apply_patch` の書き込みの後に文書の検査を動かして
   知らせるだけで、止めない（止めるのは `npm run check` と CI）。信頼できない文書を読ませる作業では、`HARNESS_NOTIFY=off` を
-  付けて起動して止める。フックはサンドボックスと確認の外で動くので、次を守る。理由と限界は `docs/adr/0005-early-notify-hooks.md`。
+  付けて起動して止める。フックはサンドボックスと確認の外で動くので、次を守る。理由と限界は `docs/adr/0005-early-notify-hooks.md` と `docs/adr/0007-harness-engine-copies.md` の追記。
   - 会話は、作業ツリーの最上位のフォルダで始める（Claude Code では、サブディレクトリで始めると、早期通知も `.env` の拒否の規則も働かない。Codex はサブディレクトリでも早期通知が働く）。
   - 信頼できない変更の作業ツリーで会話を始めない。`/cd` でも移らない。Codex では本体に取り出さない。
   - Codex は本体の定義とスクリプトを使う。本体を `origin/main` に進めておく。`.codex/hooks.json` が変わるたびに `/hooks` で信頼し直す。
