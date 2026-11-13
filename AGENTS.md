@@ -53,7 +53,7 @@ ai-news-today（GitHub）に置く。現在は土台だけで、記事の取得�
 | lint | `npm run lint` |
 | 型 | `npm run typecheck` |
 | 試験 | `npm run test` |
-| 文書（必須のファイル、CLAUDE.md、地図、リンク、目録、行数、ARCHITECTURE.md に書いたパス、計画の必須の節、受け入れ確認の記録、製品の仕様の目録と状態、古い計画、検査の由来の記録、写しの中身、文書の検査の一覧、層の評価の上限、通信の名前の一覧） | `npm run check:docs` |
+| 文書（必須のファイル、CLAUDE.md、地図、リンク、目録、行数、ARCHITECTURE.md に書いたパス、計画の必須の節、受け入れ確認の記録、製品の仕様の目録と状態、古い計画、検査の由来の記録、写しの中身、製品の機能の一覧、文書の検査の一覧、層の評価の上限、通信の名前の一覧） | `npm run check:docs` |
 | 検査の試験（文書の検査、早期通知、ESLint の規則が区画ごとに働くこと、ひな形と `src/` の間の依存の規則、定期の走査、段の読み取り（定期の走査の部品）、検査の由来の記録、このプロジェクトの設定と実物の文書） | `npm run test:harness` |
 | 層の依存の向き、`src/` の直下の名前、ひな形（`templates/`）と `src/` の間の依存 | `npm run check:arch` |
 | 秘匿値（作業ツリーの、コミットする全ファイル） | `npm run check:secrets` |
