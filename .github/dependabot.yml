@@ -1,5 +1,6 @@
-# 依存の更新を追う（npm の依存と、GitHub Actions のアクション）。
+# 依存の更新を追う（npm の依存と、GitHub Actions のアクションと、Dockerfile の土台のイメージ）。
 # アクションはコミットの SHA で固定しているので、Dependabot が SHA と版の名前のコメントを一緒に更新する。
+# 土台のイメージはタグとダイジェストで固定しているので、Dependabot が両方を一緒に更新する。
 version: 2
 updates:
   - package-ecosystem: npm
@@ -19,3 +20,11 @@ updates:
     directory: /
     schedule:
       interval: weekly
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      # Node のメジャーの版は .nvmrc と一緒に人が上げる（土台のイメージだけが先に上がり、版が食い違うのを防ぐ）
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]

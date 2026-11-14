@@ -1,0 +1,7 @@
+# 人が使う作業ツリーの bind（.:/app）だけを書く。部品 node-compose のひな形から作った。検査: bash scripts/harness/check-compose.sh
+# docker compose を -f なしで呼ぶと、compose.yaml の後に自動で重なる。エージェントの実行環境は compose.yaml だけを使うので、
+# この bind は使われない。このファイルには、ほかの項目を書かない（検査が拒む）。
+services:
+  app:
+    volumes:
+      - .:/app

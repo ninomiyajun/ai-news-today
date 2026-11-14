@@ -10,12 +10,13 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "check:docs": "bash scripts/harness/check-docs.sh",
-    "test:harness": "bash scripts/harness/check-docs.test.sh && bash scripts/harness/notify.test.sh && node scripts/harness/lint-rules.test.mjs && bash scripts/harness/check-arch.test.sh && bash scripts/harness/drift-scan.test.sh && bash scripts/harness/stack-adapter.test.sh && bash scripts/harness/harness-log-map.test.sh && bash scripts/harness/project-config.test.sh",
+    "test:harness": "bash scripts/harness/check-docs.test.sh && bash scripts/harness/notify.test.sh && node scripts/harness/lint-rules.test.mjs && bash scripts/harness/check-arch.test.sh && bash scripts/harness/drift-scan.test.sh && bash scripts/harness/stack-adapter.test.sh && bash scripts/harness/harness-log-map.test.sh && bash scripts/harness/project-config.test.sh && bash scripts/harness/check-compose.test.sh",
     "check:arch": "bash scripts/harness/check-arch.sh",
     "check:secrets": "bash scripts/harness/check-secrets.sh",
     "check:secrets:push": "bash scripts/harness/check-secrets.sh --commits",
     "scan:drift": "bash scripts/harness/drift-scan.sh",
-    "check": "npm run check:secrets && npm run lint && npm run typecheck && npm run test && npm run check:docs && npm run test:harness && npm run check:arch"
+    "check:compose": "bash scripts/harness/check-compose.sh",
+    "check": "npm run check:secrets && npm run lint && npm run typecheck && npm run test && npm run check:docs && npm run test:harness && npm run check:arch && npm run check:compose"
   },
   "engines": {
     "node": ">=26"
@@ -36,6 +37,7 @@
     "eslint-config-next": "16.4.2",
     "secretlint": "^13.0.7",
     "typescript": "^6",
-    "vitest": "^5.0.5"
+    "vitest": "^5.0.5",
+    "yaml": "2.9.1"
   }
 }
