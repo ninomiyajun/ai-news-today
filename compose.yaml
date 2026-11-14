@@ -1,0 +1,24 @@
+# アプリの開発環境の定義（Compose）。部品 node-compose のひな形から作った。検査: bash scripts/harness/check-compose.sh
+# 人の起動: docker compose up app（compose.yaml と compose.override.yaml の両方が読まれる）。停止: docker compose down
+# 依存の入れ直し: docker compose run --rm app npm ci
+# ホストのパスの bind はここに書かない（エージェントの実行環境は、このファイルだけを検査して使う）。作業ツリーの bind は
+# compose.override.yaml に置く。値の埋め込み（ドル記号）、逆斜線、YAML の anchor と型の印も、検査が拒む。
+services:
+  app:
+    build:
+      context: .
+      target: dev
+    # 利用者は数値の UID:GID で書く（node のイメージの node は 1000:1000）。イメージの USER より優先し、名前の解決に頼らない
+    user: "1000:1000"
+    working_dir: /app
+    command: ["sh", "-c", "npm ci && npm run dev -- -H 0.0.0.0 -p 3000"]
+    init: true
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - node_modules:/app/node_modules
+      - next:/app/.next
+
+volumes:
+  node_modules: {}
+  next: {}

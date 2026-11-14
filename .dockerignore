@@ -1,0 +1,5 @@
+# build の context に送らないもの（部品 node-compose のひな形から作った）
+node_modules
+.next
+.git
+.env*

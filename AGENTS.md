@@ -54,10 +54,12 @@ ai-news-today（GitHub）に置く。現在は土台だけで、記事の取得�
 | 型 | `npm run typecheck` |
 | 試験 | `npm run test` |
 | 文書（必須のファイル、CLAUDE.md、地図、リンク、目録、行数、ARCHITECTURE.md に書いたパス、計画の必須の節、受け入れ確認の記録、製品の仕様の目録と状態、古い計画、検査の由来の記録、写しの中身、製品の機能の一覧、文書の検査の一覧、層の評価の上限、通信の名前の一覧） | `npm run check:docs` |
-| 検査の試験（文書の検査、早期通知、ESLint の規則が区画ごとに働くこと、ひな形と `src/` の間の依存の規則、定期の走査、段の読み取り（定期の走査の部品）、検査の由来の記録、このプロジェクトの設定と実物の文書） | `npm run test:harness` |
+| 検査の試験（文書の検査、早期通知、ESLint の規則が区画ごとに働くこと、ひな形と `src/` の間の依存の規則、定期の走査、段の読み取り（定期の走査の部品）、検査の由来の記録、このプロジェクトの設定と実物の文書、開発環境の定義の検査） | `npm run test:harness` |
 | 層の依存の向き、`src/` の直下の名前、ひな形（`templates/`）と `src/` の間の依存 | `npm run check:arch` |
 | 秘匿値（作業ツリーの、コミットする全ファイル） | `npm run check:secrets` |
 | 秘匿値（push する範囲の各コミットの中身） | `npm run check:secrets:push` |
+| 開発環境の定義（`compose.yaml`・`compose.override.yaml`・`Dockerfile` の、ホストのパスの bind・値の埋め込み・build の context の読み込みなどの拒否） | `bash scripts/harness/check-compose.sh` |
+| 開発環境の定義の検査の試験 | `bash scripts/harness/check-compose.test.sh` |
 | 定期の走査と同じ走査を手元で行う（所見があっても失敗にしない。置き場は、無いか空のディレクトリを指定する） | `npm run scan:drift -- --out <置き場>` |
 | 手元で起動 | `npm run dev`（http://127.0.0.1:3000）。確認用のデータ（決まった記事と時刻。外部へ通信しない。画面に「確認用のデータで表示中」が出る）で起動するときは `AI_NEWS_FIXTURE=sample npm run dev -- -p <ポート>`（3000 は普段の起動に使うので、確認には 3100 以上を使う。`docs/adr/0004-fixture-data-for-acceptance.md`） |
 
@@ -75,6 +77,7 @@ ai-news-today（GitHub）に置く。現在は土台だけで、記事の取得�
 | 製品の仕様（書式と目録） | `docs/product-specs/README.md` | 新しい機能や画面の仕様を書くとき、仕様を引く計画を書くとき・確かめるとき |
 | 計画の書式 | `docs/PLANS.md` | 計画を書くとき、計画を読むとき |
 | アプリの起動の手順 | `.claude/skills/run-ai-news-today/SKILL.md` | アプリを起動して画面を確かめるとき（受け入れ確認を含む） |
+| 開発環境の定義（Docker） | `compose.yaml` | Docker で開発環境を起動するとき、開発環境を変えるとき（人の作業ツリーの bind は `compose.override.yaml`、イメージは `Dockerfile` に書く。変えたら、検査のコマンドの表の開発環境の定義の検査を通す。git の worktree では、コンテナの中で git を使う検査（秘匿値の検査と、それを含む全部の検査）が落ちるので、コンテナで検査を流すときは通常の clone で行う） |
 | 進行中の計画 | `docs/exec-plans/active/` | 作業を再開するとき |
 | 完了した計画 | `docs/exec-plans/completed/` | 過去の作業の経緯を知りたいとき |
 | 技術的負債の一覧 | `docs/exec-plans/tech-debt-tracker.md` | 作業の範囲外の問題を見つけたとき、文書を点検するとき |

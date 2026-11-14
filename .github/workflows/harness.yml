@@ -64,7 +64,10 @@ jobs:
         run: npm run test
       - name: check-docs
         run: npm run check:docs
-      - name: test-harness（文書の検査、早期通知、lint の規則、依存の規則、定期の走査、段の読み取り、検査の由来の記録、このプロジェクトの設定の試験）
+      - name: test-harness（文書の検査、早期通知、lint の規則、依存の規則、定期の走査、段の読み取り、検査の由来の記録、このプロジェクトの設定、開発環境の定義の検査の試験）
         run: npm run test:harness
       - name: check-arch
         run: npm run check:arch
+      # 開発環境の定義（compose.yaml・compose.override.yaml・Dockerfile）の静的な検査。yaml のパッケージを使うので npm ci の後
+      - name: check-compose（開発環境の定義の検査）
+        run: npm run check:compose
